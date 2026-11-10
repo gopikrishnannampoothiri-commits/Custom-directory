@@ -855,74 +855,44 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
 
             {authMethod === 'oauth2' && (
               <div className="auth-fields active">
-                <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '6px', padding: '14px 16px', marginBottom: '16px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#111827', marginBottom: '6px' }}>
-                    Setup prerequisites &amp; directory permissions:
+                <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '6px', padding: '14px 18px', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#111827', marginBottom: '8px' }}>
+                    Prerequisites in your source directory:
                   </div>
-                  <p style={{ fontSize: '12px', color: '#4B5563', margin: '0 0 10px 0', lineHeight: 1.45 }}>
-                    Create an application registration in your source directory with Client Credentials grant enabled. Grant read permissions to allow both <strong>Phase 1 Directory Synchronization</strong> and <strong>Phase 2 Asset Discovery &amp; Migration</strong>.
-                  </p>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px', marginBottom: '10px' }}>
-                    <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '4px', padding: '8px 10px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827', marginBottom: '3px' }}>
-                        Users &amp; Groups <span className="pill pill-success" style={{ fontSize: '9.5px', padding: '1px 5px' }}>Phase 1 &amp; 2</span>
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#4B5563', lineHeight: 1.4 }}>
-                        • <code>User.Read.All</code>: Read user profiles, attributes, status &amp; titles<br />
-                        • <code>Group.Read.All</code>: Read security groups and membership mappings
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '4px', padding: '8px 10px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827', marginBottom: '3px' }}>
-                        Organizational Units <span className="pill pill-success" style={{ fontSize: '9.5px', padding: '1px 5px' }}>Phase 1 &amp; 2</span>
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#4B5563', lineHeight: 1.4 }}>
-                        • <code>Directory.Read.All</code>: Read organizational unit hierarchy, domains &amp; tree structure
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '4px', padding: '8px 10px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827', marginBottom: '3px' }}>
-                        SSO Applications <span className="pill pill-info" style={{ fontSize: '9.5px', padding: '1px 5px' }}>Phase 2 Discovery</span>
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#4B5563', lineHeight: 1.4 }}>
-                        • <code>Application.Read.All</code>: Read SAML/OIDC app configs, protocols &amp; app assignments
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '4px', padding: '8px 10px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827', marginBottom: '3px' }}>
-                        Security Policies <span className="pill pill-info" style={{ fontSize: '9.5px', padding: '1px 5px' }}>Phase 2 Discovery</span>
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#4B5563', lineHeight: 1.4 }}>
-                        • <code>Policy.Read.All</code>: Read password rules, MFA, session controls &amp; conditional access
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '4px', padding: '8px 10px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827', marginBottom: '3px' }}>
-                        Technicians &amp; Roles <span className="pill pill-info" style={{ fontSize: '9.5px', padding: '1px 5px' }}>Phase 2 Discovery</span>
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#4B5563', lineHeight: 1.4 }}>
-                        • <code>RoleManagement.Read.Directory</code>: Read technician roles, scopes &amp; user assignments
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '4px', padding: '8px 10px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827', marginBottom: '3px' }}>
-                        Session Maintenance <span className="pill pill-muted" style={{ fontSize: '9.5px', padding: '1px 5px' }}>Standard</span>
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#4B5563', lineHeight: 1.4 }}>
-                        • <code>offline_access</code>: Refresh access tokens for uninterrupted background synchronization
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ fontSize: '11.5px', color: '#6B7280', borderTop: '1px solid #E5E7EB', paddingTop: '8px', lineHeight: 1.4 }}>
-                    <strong>Note:</strong> Phase 2 asset discovery requires these additional read scopes. Granting read access only allows Hexnode to inspect source assets for migration planning—it does not write or modify assets in your source directory.
-                  </div>
+                  <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#374151', lineHeight: '1.6' }}>
+                    <li style={{ marginBottom: '6px' }}>
+                      Register an application with <strong>Client Credentials</strong> grant enabled in your source IdP.
+                    </li>
+                    <li style={{ marginBottom: '6px' }}>
+                      Generate a client secret and configure your Token URL, Client ID, and Client Secret below.
+                    </li>
+                    <li>
+                      Grant the required directory read permissions:
+                      <ul style={{ margin: '6px 0 2px 0', paddingLeft: '20px', listStyleType: 'circle', fontSize: '12.5px', color: '#4B5563', lineHeight: '1.55' }}>
+                        <li style={{ marginBottom: '4px' }}>
+                          <code style={{ color: '#1D4ED8', background: '#EFF6FF', padding: '1px 5px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 500 }}>User.Read.All</code> — Read user profiles, titles, and account status
+                        </li>
+                        <li style={{ marginBottom: '4px' }}>
+                          <code style={{ color: '#1D4ED8', background: '#EFF6FF', padding: '1px 5px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 500 }}>Group.Read.All</code> — Read security groups and memberships
+                        </li>
+                        <li style={{ marginBottom: '4px' }}>
+                          <code style={{ color: '#1D4ED8', background: '#EFF6FF', padding: '1px 5px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 500 }}>Directory.Read.All</code> — Read organizational units and directory hierarchy
+                        </li>
+                        <li style={{ marginBottom: '4px' }}>
+                          <code style={{ color: '#1D4ED8', background: '#EFF6FF', padding: '1px 5px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 500 }}>Application.Read.All</code> — Read SSO applications and assignments
+                        </li>
+                        <li style={{ marginBottom: '4px' }}>
+                          <code style={{ color: '#1D4ED8', background: '#EFF6FF', padding: '1px 5px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 500 }}>Policy.Read.All</code> — Read security policies, password rules, and MFA controls
+                        </li>
+                        <li style={{ marginBottom: '4px' }}>
+                          <code style={{ color: '#1D4ED8', background: '#EFF6FF', padding: '1px 5px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 500 }}>RoleManagement.Read.Directory</code> — Read technician roles and permissions
+                        </li>
+                        <li style={{ marginBottom: '2px' }}>
+                          <code style={{ color: '#1D4ED8', background: '#EFF6FF', padding: '1px 5px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 500 }}>offline_access</code> — Refresh access tokens for uninterrupted background sync
+                        </li>
+                      </ul>
+                    </li>
+                  </ul>
                 </div>
                 <div className="field-row">
                   <div className="field">
@@ -2731,13 +2701,13 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
                         {[
-                          { scope: 'User.Read.All', label: 'Read all user profiles, titles, and status', phase: 'Phase 1 & 2' },
-                          { scope: 'Group.Read.All', label: 'Read security groups and memberships', phase: 'Phase 1 & 2' },
-                          { scope: 'Directory.Read.All', label: 'Read organizational units and directory hierarchy', phase: 'Phase 1 & 2' },
-                          { scope: 'Application.Read.All', label: 'Read SSO applications, configurations, and assignments', phase: 'Phase 2' },
-                          { scope: 'Policy.Read.All', label: 'Read security policies, password rules, and MFA controls', phase: 'Phase 2' },
-                          { scope: 'RoleManagement.Read.Directory', label: 'Read technician roles, scopes, and profile assignments', phase: 'Phase 2' },
-                          { scope: 'offline_access', label: 'Maintain continuous background synchronization', phase: 'Session' }
+                          { scope: 'User.Read.All', label: 'Read all user profiles, titles, and status' },
+                          { scope: 'Group.Read.All', label: 'Read security groups and memberships' },
+                          { scope: 'Directory.Read.All', label: 'Read organizational units and directory hierarchy' },
+                          { scope: 'Application.Read.All', label: 'Read SSO applications, configurations, and assignments' },
+                          { scope: 'Policy.Read.All', label: 'Read security policies, password rules, and MFA controls' },
+                          { scope: 'RoleManagement.Read.Directory', label: 'Read technician roles, scopes, and profile assignments' },
+                          { scope: 'offline_access', label: 'Maintain continuous background synchronization' }
                         ].map((p) => (
                           <div
                             key={p.scope}
@@ -2760,12 +2730,6 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                               </strong>
                               <span style={{ color: '#6B7280', marginLeft: '8px' }}>— {p.label}</span>
                             </div>
-                            <span
-                              className={`pill ${p.phase === 'Phase 2' ? 'pill-info' : p.phase === 'Session' ? 'pill-muted' : 'pill-success'}`}
-                              style={{ fontSize: '10px', padding: '1px 6px' }}
-                            >
-                              {p.phase}
-                            </span>
                           </div>
                         ))}
                       </div>

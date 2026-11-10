@@ -1412,17 +1412,8 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                 </span>
               </div>
 
-              {/* Action Controls: Rescan & Bulk Selection */}
+              {/* Action Controls: Rescan Inventory */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={handleSelectAllEligible}
-                  disabled={isDiscovering}
-                >
-                  {isAllEligibleSelected ? 'Deselect All' : 'Select All Eligible'}
-                </button>
-
                 <button
                   type="button"
                   className="btn btn-outline btn-sm"
@@ -1469,7 +1460,6 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                         />
                       </th>
                       <th>Asset Name &amp; Source ID</th>
-                      <th>Protocol / Type</th>
                       <th>Scope &amp; Assignees</th>
                       <th>Supportability</th>
                       <th>Detected Notices &amp; Notes</th>
@@ -1500,9 +1490,6 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                             <div style={{ fontSize: '11px', color: '#6B7280', fontFamily: 'var(--mono)' }}>
                               {asset.sourceId}
                             </div>
-                          </td>
-                          <td>
-                            <span className="pill pill-info">{asset.type}</span>
                           </td>
                           <td style={{ fontSize: '13px', color: '#4B5563' }}>
                             {category === 'apps' && `${asset.usersCount?.toLocaleString() || 0} users`}

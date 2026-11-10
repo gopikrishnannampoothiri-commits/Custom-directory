@@ -1,0 +1,6 @@
+{
+  "name": "Hexnode IdP — Directory Integration",
+  "description": "Connect and manage your directory services like Entra ID, Google Workspace, Okta, and Custom Directories with AI-powered migration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

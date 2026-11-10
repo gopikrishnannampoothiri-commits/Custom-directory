@@ -331,7 +331,7 @@ export const AddDirectoryModal: React.FC<AddDirectoryModalProps> = ({
                   color: '#7C3AED'
                 }}
               >
-                Custom Identity Connector
+                Custom Directory API
               </span>
             </div>
             <div

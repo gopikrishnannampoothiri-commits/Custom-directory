@@ -20,9 +20,38 @@ import {
   EditIcon,
   TrashIcon,
   PlusIcon,
-  SparkleIcon
+  SparkleIcon,
+  CloseIcon
 } from './icons.tsx';
 import { getDiscoveredAssetsForCategory } from '../data/mockData.ts';
+
+const ALL_COUNTRIES = [
+  'Australia',
+  'Brazil',
+  'Canada',
+  'Denmark',
+  'France',
+  'Germany',
+  'India',
+  'Ireland',
+  'Israel',
+  'Italy',
+  'Japan',
+  'Mexico',
+  'Netherlands',
+  'New Zealand',
+  'Norway',
+  'Poland',
+  'Singapore',
+  'South Africa',
+  'South Korea',
+  'Spain',
+  'Sweden',
+  'Switzerland',
+  'United Arab Emirates',
+  'United Kingdom',
+  'United States'
+];
 
 interface AssetMigrationWizardProps {
   category: AssetCategory;
@@ -90,6 +119,47 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
   const [newScopedGroup, setNewScopedGroup] = useState<string>('');
   const [newExcludedGroup, setNewExcludedGroup] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+
+  // Conditional Access Policy Workspace State
+  const [caGeoTab, setCaGeoTab] = useState<'included' | 'excluded'>('included');
+  const [caNetworkTab, setCaNetworkTab] = useState<'included' | 'excluded'>('included');
+  const [caCountrySelect, setCaCountrySelect] = useState<string>('United States');
+  const [caFenceSelect, setCaFenceSelect] = useState<string>('San Francisco HQ');
+  const [caNewIPInput, setCaNewIPInput] = useState<string>('');
+
+  // Available Fences Registry (for selection and creation)
+  const [availableFences, setAvailableFences] = useState<Array<{
+    id: string;
+    name: string;
+    type: 'Circle' | 'Polygon';
+    lat?: number;
+    lng?: number;
+    radius?: number;
+    radiusUnit?: 'Meters' | 'Kilometers';
+    centers?: Array<{ lat: number; lng: number }>;
+  }>>([
+    { id: 'fence-1', name: 'San Francisco HQ', type: 'Circle', lat: 37.7749, lng: -122.4194, radius: 500, radiusUnit: 'Meters' },
+    { id: 'fence-2', name: 'London Tech Hub', type: 'Polygon', centers: [{ lat: 51.5074, lng: -0.1278 }, { lat: 51.5120, lng: -0.1210 }, { lat: 51.5030, lng: -0.1230 }] },
+    { id: 'fence-3', name: 'Frankfurt Datacenter', type: 'Circle', lat: 50.1109, lng: 8.6821, radius: 300, radiusUnit: 'Meters' },
+    { id: 'fence-4', name: 'Singapore Regional Office', type: 'Circle', lat: 1.2834, lng: 103.8580, radius: 450, radiusUnit: 'Meters' }
+  ]);
+
+  // "Add a New Fence" Modal State
+  const [isFenceModalOpen, setIsFenceModalOpen] = useState<boolean>(false);
+  const [fenceName, setFenceName] = useState<string>('');
+  const [fenceNameError, setFenceNameError] = useState<string>('');
+  const [fenceLocationSearch, setFenceLocationSearch] = useState<string>('');
+  const [fenceShape, setFenceShape] = useState<'Circle' | 'Polygon'>('Circle');
+  const [fenceCircleLat, setFenceCircleLat] = useState<string>('37.7749');
+  const [fenceCircleLng, setFenceCircleLng] = useState<string>('-122.4194');
+  const [fenceCircleRadius, setFenceCircleRadius] = useState<string>('500');
+  const [fenceCircleRadiusUnit, setFenceCircleRadiusUnit] = useState<'Meters' | 'Kilometers'>('Meters');
+  const [fenceMapZoom, setFenceMapZoom] = useState<number>(14);
+  const [fencePolygonCenters, setFencePolygonCenters] = useState<Array<{ lat: string; lng: string }>>([
+    { lat: '37.7749', lng: '-122.4194' },
+    { lat: '37.7810', lng: '-122.4110' },
+    { lat: '37.7720', lng: '-122.4080' }
+  ]);
 
   // Confirmation state for Step 3 approval
   const [approvalConfirmed, setApprovalConfirmed] = useState<boolean>(true);
@@ -180,16 +250,15 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
             defaultMappings[a.id] = {
               protocol: 'OIDC',
               targetName: a.name,
-              appType: 'web',
-              clientAuth: 'client_secret_post',
-              pkceEnforced: true,
+              appType: 'Web Application',
+              clientType: 'Public',
+              requirePkce: false,
               redirectUris: [
-                `https://${slug}.com/oauth/callback`,
-                `https://${slug}.com/signin-oidc`
+                `https://${slug}.com/callback`
               ],
-              logoutUris: [`https://${slug}.com/logout/callback`],
-              allowedScopes: ['openid', 'profile', 'email', 'groups'],
-              grantTypes: ['authorization_code', 'refresh_token'],
+              logoutUris: [`https://${slug}.com/logout`],
+              allowedScopes: ['OpenID'],
+              grantTypes: ['Authorization Code'],
               assignmentScopeType: 'source_preserved',
               sourceAssignments: {
                 groups: sourceGroups,
@@ -198,23 +267,23 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
               },
               customAssignments,
               assignedGroups: sourceGroups,
-              tokenClaims: [
-                { source: 'sub', target: 'sub', isStandard: true },
-                { source: 'email', target: 'email', isStandard: true },
-                { source: 'name', target: 'name', isStandard: true },
-                { source: 'roles', target: 'roles', isStandard: true }
-              ],
-              genieMappedFields: ['redirectUris', 'logoutUris', 'allowedScopes', 'tokenClaims']
+              genieMappedFields: ['redirectUris', 'logoutUris', 'allowedScopes', 'grantTypes']
             };
           } else {
             defaultMappings[a.id] = {
               protocol: 'SAML 2.0',
               targetName: a.name,
+              acsUrl:
+                a.name === 'Legacy Portal'
+                  ? ''
+                  : `https://idp.hexnode.com/saml/${slug}/acs`,
               entityId:
                 a.name === 'Workday'
                   ? 'https://idp.hexnode.com/saml/workday-meridian-v2/metadata'
                   : `https://idp.hexnode.com/saml/${slug}/metadata`,
-              ssoUrl: `https://idp.hexnode.com/saml/${slug}/sso`,
+              audienceUri: 'https://example.com/audience',
+              nameIdFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+              ssoUrl: `https://idp.hexnode.com/saml/${slug}/acs`,
               sloUrl: `https://idp.hexnode.com/saml/${slug}/slo`,
               nameIdClaim: 'emailAddress',
               signingAlg: 'SHA-256',
@@ -739,35 +808,34 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
         defaultObj = {
           protocol: 'OIDC',
           targetName: activeAsset.name,
-          appType: 'web',
-          clientAuth: 'client_secret_post',
-          pkceEnforced: true,
+          appType: 'Web Application',
+          clientType: 'Public',
+          requirePkce: false,
           redirectUris: [
-            `https://${slug}.com/oauth/callback`,
-            `https://${slug}.com/signin-oidc`
+            `https://${slug}.com/callback`
           ],
-          logoutUris: [`https://${slug}.com/logout/callback`],
-          allowedScopes: ['openid', 'profile', 'email', 'groups'],
-          grantTypes: ['authorization_code', 'refresh_token'],
+          logoutUris: [`https://${slug}.com/logout`],
+          allowedScopes: ['OpenID'],
+          grantTypes: ['Authorization Code'],
           assignmentScopeType: 'source_preserved',
           assignedGroups: ['Engineering', 'Product Management', 'Design'],
-          tokenClaims: [
-            { source: 'sub', target: 'sub', isStandard: true },
-            { source: 'email', target: 'email', isStandard: true },
-            { source: 'name', target: 'name', isStandard: true },
-            { source: 'roles', target: 'roles', isStandard: true }
-          ],
-          genieMappedFields: ['redirectUris', 'logoutUris', 'allowedScopes', 'tokenClaims']
+          genieMappedFields: ['redirectUris', 'logoutUris', 'allowedScopes', 'grantTypes']
         };
       } else {
         defaultObj = {
           protocol: 'SAML 2.0',
           targetName: activeAsset.name,
+          acsUrl:
+            activeAsset.name === 'Legacy Portal'
+              ? ''
+              : `https://idp.hexnode.com/saml/${slug}/acs`,
           entityId:
             activeAsset.name === 'Workday'
               ? 'https://idp.hexnode.com/saml/workday-meridian-v2/metadata'
               : `https://idp.hexnode.com/saml/${slug}/metadata`,
-          ssoUrl: `https://idp.hexnode.com/saml/${slug}/sso`,
+          audienceUri: 'https://example.com/audience',
+          nameIdFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+          ssoUrl: `https://idp.hexnode.com/saml/${slug}/acs`,
           sloUrl: `https://idp.hexnode.com/saml/${slug}/slo`,
           nameIdClaim: 'emailAddress',
           signingAlg: 'SHA-256',
@@ -1911,584 +1979,429 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
 
                           {/* Protocol-Specific Branch: SAML 2.0 vs OIDC */}
                           {(activeAsset.protocol === 'OIDC' || activeAsset.type === 'OIDC') ? (
-                            /* ===== OIDC APPLICATION FORM ===== */
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                              {/* Display Name */}
+                            /* ===== 2. SINGLE SIGN-ON (OIDC) ===== */
+                            <div className="card" style={{ padding: '20px', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                              <div style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '10px' }}>
+                                <h3 style={{ fontSize: '14.5px', fontWeight: 700, color: '#111827', margin: 0 }}>
+                                  Single Sign-On (OIDC)
+                                </h3>
+                                <p style={{ fontSize: '12px', color: '#6B7280', margin: '3px 0 0 0' }}>
+                                  Configure OpenID Connect authentication endpoints, client credentials, and access scopes.
+                                </p>
+                              </div>
+
+                              {/* Application Type* */}
                               <div>
-                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '3px' }}>
-                                  Application Display Name <span style={{ color: '#DC2626' }}>*</span>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                                  Application Type <span style={{ color: '#DC2626' }}>*</span>
                                 </label>
-                                <input
-                                  className="input"
-                                  style={{ fontSize: '12.5px', padding: '6px 10px' }}
-                                  value={activeMapping.targetName || activeAsset.name}
-                                  onChange={(e) => updateActiveMapping({ targetName: e.target.value })}
-                                />
-                                <span style={{ fontSize: '11px', color: '#6B7280', marginTop: '2px', display: 'block' }}>
-                                  Source in Meridian ID: <code>{activeAsset.name}</code> (OIDC Client)
-                                </span>
+                                <select
+                                  className="select"
+                                  style={{ fontSize: '12.5px', padding: '7px 10px', width: '100%', background: '#FFFFFF' }}
+                                  value={
+                                    activeMapping.appType === 'native' ? 'Native Application' :
+                                    activeMapping.appType === 'spa' ? 'Single Page Application' :
+                                    (activeMapping.appType || 'Web Application')
+                                  }
+                                  onChange={(e) => updateActiveMapping({ appType: e.target.value })}
+                                  required
+                                >
+                                  <option value="Web Application">Web Application</option>
+                                  <option value="Native Application">Native Application</option>
+                                  <option value="Single Page Application">Single Page Application</option>
+                                </select>
                               </div>
 
-                              {/* App Type & Client Auth */}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '3px' }}>
-                                    Application Type
+                              {/* Client Type* */}
+                              <div>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '6px' }}>
+                                  Client Type <span style={{ color: '#DC2626' }}>*</span>
+                                </label>
+                                <div style={{ display: 'flex', gap: '20px' }}>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 500, color: '#374151', cursor: 'pointer' }}>
+                                    <input
+                                      type="radio"
+                                      name="oidcClientType"
+                                      value="Confidential"
+                                      checked={(activeMapping.clientType || 'Public') === 'Confidential'}
+                                      onChange={(e) => updateActiveMapping({ clientType: e.target.value })}
+                                    />
+                                    Confidential
                                   </label>
-                                  <select
-                                    className="select"
-                                    style={{ fontSize: '12px', padding: '6px 8px' }}
-                                    value={activeMapping.appType || 'web'}
-                                    onChange={(e) => updateActiveMapping({ appType: e.target.value })}
-                                  >
-                                    <option value="web">Web Application (Server-rendered / API)</option>
-                                    <option value="spa">Single Page App (SPA / Browser-only)</option>
-                                    <option value="native">Native / Mobile Client</option>
-                                  </select>
-                                </div>
-
-                                <div>
-                                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '3px' }}>
-                                    Client Authentication
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 500, color: '#374151', cursor: 'pointer' }}>
+                                    <input
+                                      type="radio"
+                                      name="oidcClientType"
+                                      value="Public"
+                                      checked={(activeMapping.clientType || 'Public') === 'Public'}
+                                      onChange={(e) => updateActiveMapping({ clientType: e.target.value })}
+                                    />
+                                    Public
                                   </label>
-                                  <select
-                                    className="select"
-                                    style={{ fontSize: '12px', padding: '6px 8px' }}
-                                    value={activeMapping.clientAuth || 'client_secret_post'}
-                                    onChange={(e) => updateActiveMapping({ clientAuth: e.target.value })}
-                                  >
-                                    <option value="client_secret_post">Client Secret (HTTP POST)</option>
-                                    <option value="client_secret_basic">Client Secret (HTTP Basic)</option>
-                                    <option value="pkce_only">PKCE Only (Public Client)</option>
-                                  </select>
                                 </div>
                               </div>
 
-                              {/* PKCE Toggle */}
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #E5E7EB' }}>
-                                <div>
-                                  <span style={{ fontSize: '12.5px', color: '#111827', fontWeight: 500, display: 'block' }}>
-                                    Enforce PKCE (Proof Key for Code Exchange)
-                                  </span>
-                                  <span style={{ fontSize: '11px', color: '#6B7280' }}>
-                                    Requires SHA-256 code challenge on authorization code flow
-                                  </span>
-                                </div>
-                                <label className="toggle">
+                              {/* Require PKCE */}
+                              <div>
+                                <label
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    fontSize: '12.5px',
+                                    fontWeight: 500,
+                                    color: (activeMapping.clientType || 'Public') === 'Public' ? '#9CA3AF' : '#374151',
+                                    cursor: (activeMapping.clientType || 'Public') === 'Public' ? 'not-allowed' : 'pointer'
+                                  }}
+                                >
                                   <input
                                     type="checkbox"
-                                    checked={activeMapping.pkceEnforced !== false}
-                                    onChange={(e) => updateActiveMapping({ pkceEnforced: e.target.checked })}
+                                    id="require-pkce"
+                                    disabled={(activeMapping.clientType || 'Public') === 'Public'}
+                                    checked={
+                                      (activeMapping.clientType || 'Public') === 'Public'
+                                        ? false
+                                        : activeMapping.requirePkce === true
+                                    }
+                                    onChange={(e) => updateActiveMapping({ requirePkce: e.target.checked })}
+                                    style={{
+                                      width: '15px',
+                                      height: '15px',
+                                      cursor: (activeMapping.clientType || 'Public') === 'Public' ? 'not-allowed' : 'pointer'
+                                    }}
                                   />
-                                  <span className="toggle-track" />
+                                  <span>Require PKCE</span>
                                 </label>
                               </div>
 
-                              {/* Login Redirect URIs */}
-                              <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: '10px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    Login Redirect URIs <span style={{ color: '#DC2626' }}>*</span>
-                                    <span
-                                      className="pill"
-                                      style={{
-                                        background: '#F5F3FF',
-                                        color: '#6D28D9',
-                                        border: '1px solid #DDD6FE',
-                                        fontSize: '10.5px',
-                                        padding: '1px 7px',
-                                        fontWeight: 500,
-                                        borderRadius: '9999px',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '3px'
-                                      }}
-                                    >
-                                      <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                    </span>
-                                  </label>
-                                  <span style={{ fontSize: '11px', color: '#6B7280' }}>
-                                    Source: <code>{activeAsset.name.toLowerCase()}.com</code>
-                                  </span>
-                                </div>
+                              {/* Login Redirect URIs* */}
+                              <div>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '6px' }}>
+                                  Login Redirect URIs <span style={{ color: '#DC2626' }}>*</span>
+                                </label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+                                  {(() => {
+                                    const uris: string[] =
+                                      activeMapping.redirectUris && activeMapping.redirectUris.length > 0
+                                        ? activeMapping.redirectUris
+                                        : ['https://example.com/callback'];
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '6px' }}>
-                                  {(activeMapping.redirectUris || [
-                                    `https://${activeAsset.name.toLowerCase()}.com/oauth/callback`
-                                  ]).map((uri: string) => (
-                                    <div
-                                      key={uri}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        padding: '4px 8px',
-                                        background: '#F9FAFB',
-                                        border: '1px solid #E5E7EB',
-                                        borderRadius: '4px',
-                                        fontSize: '11.5px',
-                                        fontFamily: 'var(--mono)'
-                                      }}
-                                    >
-                                      <span>{uri}</span>
+                                    return uris.map((uri: string, idx: number) => (
+                                      <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                        <input
+                                          type="text"
+                                          className="input"
+                                          placeholder="https://example.com/callback"
+                                          value={uri}
+                                          onChange={(e) => {
+                                            const updated = [...uris];
+                                            updated[idx] = e.target.value;
+                                            updateActiveMapping({ redirectUris: updated });
+                                          }}
+                                          style={{ flex: 1, fontSize: '12.5px', padding: '6px 10px', fontFamily: 'var(--mono)' }}
+                                          required
+                                        />
+                                        {uris.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const updated = uris.filter((_: string, i: number) => i !== idx);
+                                              updateActiveMapping({ redirectUris: updated });
+                                              showToast('Removed redirect URI');
+                                            }}
+                                            style={{
+                                              background: 'none',
+                                              border: 'none',
+                                              color: '#DC2626',
+                                              cursor: 'pointer',
+                                              padding: '6px',
+                                              display: 'flex',
+                                              alignItems: 'center'
+                                            }}
+                                            title="Delete entry"
+                                          >
+                                            <TrashIcon size={14} />
+                                          </button>
+                                        )}
+                                      </div>
+                                    ));
+                                  })()}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => {
+                                    const current =
+                                      activeMapping.redirectUris && activeMapping.redirectUris.length > 0
+                                        ? activeMapping.redirectUris
+                                        : ['https://example.com/callback'];
+                                    updateActiveMapping({ redirectUris: [...current, ''] });
+                                  }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11.5px' }}
+                                >
+                                  <PlusIcon size={13} /> Add Redirect URI
+                                </button>
+                              </div>
+
+                              {/* Logout URIs */}
+                              <div>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '6px' }}>
+                                  Logout URIs
+                                </label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+                                  {(activeMapping.logoutUris || []).map((uri: string, idx: number) => (
+                                    <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                      <input
+                                        type="text"
+                                        className="input"
+                                        placeholder="https://example.com/logout"
+                                        value={uri}
+                                        onChange={(e) => {
+                                          const updated = [...(activeMapping.logoutUris || [])];
+                                          updated[idx] = e.target.value;
+                                          updateActiveMapping({ logoutUris: updated });
+                                        }}
+                                        style={{ flex: 1, fontSize: '12.5px', padding: '6px 10px', fontFamily: 'var(--mono)' }}
+                                      />
                                       <button
                                         type="button"
-                                        onClick={() => handleRemoveRedirectUri(uri)}
-                                        style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', padding: 0 }}
-                                        title="Remove URI"
+                                        onClick={() => {
+                                          const updated = (activeMapping.logoutUris || []).filter((_: string, i: number) => i !== idx);
+                                          updateActiveMapping({ logoutUris: updated });
+                                          showToast('Removed logout URI');
+                                        }}
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          color: '#DC2626',
+                                          cursor: 'pointer',
+                                          padding: '6px',
+                                          display: 'flex',
+                                          alignItems: 'center'
+                                        }}
+                                        title="Delete entry"
                                       >
-                                        <TrashIcon size={12} />
+                                        <TrashIcon size={14} />
                                       </button>
                                     </div>
                                   ))}
                                 </div>
-
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                  <input
-                                    type="text"
-                                    placeholder="Add redirect URI (e.g. https://app.example.com/callback)"
-                                    value={newRedirectUri}
-                                    onChange={(e) => setNewRedirectUri(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        handleAddRedirectUri();
-                                      }
-                                    }}
-                                    style={{ flex: 1, padding: '5px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #D1D5DB', fontFamily: 'var(--mono)' }}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline btn-sm"
-                                    onClick={handleAddRedirectUri}
-                                    disabled={!newRedirectUri.trim()}
-                                  >
-                                    + Add URI
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => {
+                                    const current = activeMapping.logoutUris || [];
+                                    updateActiveMapping({ logoutUris: [...current, ''] });
+                                  }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11.5px' }}
+                                >
+                                  <PlusIcon size={13} /> Add Logout URI
+                                </button>
                               </div>
 
-                              {/* Allowed Scopes */}
-                              <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: '10px' }}>
-                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                                  Allowed Scopes
-                                  <span
-                                    className="pill"
-                                    style={{
-                                      background: '#F5F3FF',
-                                      color: '#6D28D9',
-                                      border: '1px solid #DDD6FE',
-                                      fontSize: '10.5px',
-                                      padding: '1px 7px',
-                                      fontWeight: 500,
-                                      borderRadius: '9999px',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '3px'
-                                    }}
-                                  >
-                                    <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                  </span>
+                              {/* Allowed Scopes* */}
+                              <div>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '8px' }}>
+                                  Allowed Scopes <span style={{ color: '#DC2626' }}>*</span>
                                 </label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                  {['openid', 'profile', 'email', 'groups', 'offline_access'].map((scope) => {
-                                    const isChecked = (activeMapping.allowedScopes || ['openid', 'profile', 'email']).includes(scope);
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+                                  {[
+                                    { id: 'OpenID', label: 'OpenID' },
+                                    { id: 'Profile', label: 'Profile' },
+                                    { id: 'Email', label: 'Email' },
+                                    { id: 'Offline Access', label: 'Offline Access' },
+                                    { id: 'SCIM', label: 'SCIM' }
+                                  ].map((scope) => {
+                                    const rawScopes: string[] =
+                                      activeMapping.allowedScopes !== undefined
+                                        ? activeMapping.allowedScopes
+                                        : ['OpenID'];
+
+                                    const isChecked = rawScopes.some((s: string) => {
+                                      if (scope.id === 'OpenID') return s.toLowerCase() === 'openid';
+                                      if (scope.id === 'Profile') return s.toLowerCase() === 'profile';
+                                      if (scope.id === 'Email') return s.toLowerCase() === 'email';
+                                      if (scope.id === 'Offline Access') return s.toLowerCase() === 'offline access' || s.toLowerCase() === 'offline_access';
+                                      if (scope.id === 'SCIM') return s.toLowerCase() === 'scim';
+                                      return s === scope.id;
+                                    });
+
                                     return (
-                                      <button
-                                        key={scope}
-                                        type="button"
-                                        onClick={() => handleToggleScope(scope)}
+                                      <label
+                                        key={scope.id}
                                         style={{
-                                          fontSize: '11.5px',
-                                          fontFamily: 'var(--mono)',
-                                          padding: '3px 8px',
-                                          borderRadius: '4px',
-                                          border: `1px solid ${isChecked ? '#BFDBFE' : '#D1D5DB'}`,
-                                          background: isChecked ? '#EFF6FF' : '#FFFFFF',
-                                          color: isChecked ? '#1D4ED8' : '#6B7280',
-                                          cursor: 'pointer',
-                                          fontWeight: isChecked ? 600 : 400
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          fontSize: '12.5px',
+                                          color: '#374151',
+                                          cursor: 'pointer'
                                         }}
                                       >
-                                        {isChecked ? `✓ ${scope}` : scope}
-                                      </button>
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            let nextScopes = [...rawScopes];
+                                            if (e.target.checked) {
+                                              if (!isChecked) nextScopes.push(scope.id);
+                                            } else {
+                                              nextScopes = nextScopes.filter((s: string) => {
+                                                if (scope.id === 'OpenID') return s.toLowerCase() !== 'openid';
+                                                if (scope.id === 'Profile') return s.toLowerCase() !== 'profile';
+                                                if (scope.id === 'Email') return s.toLowerCase() !== 'email';
+                                                if (scope.id === 'Offline Access') return s.toLowerCase() !== 'offline access' && s.toLowerCase() !== 'offline_access';
+                                                if (scope.id === 'SCIM') return s.toLowerCase() !== 'scim';
+                                                return s !== scope.id;
+                                              });
+                                            }
+                                            updateActiveMapping({ allowedScopes: nextScopes });
+                                          }}
+                                          style={{ width: '15px', height: '15px' }}
+                                        />
+                                        <span>{scope.label}</span>
+                                      </label>
                                     );
                                   })}
                                 </div>
                               </div>
 
-                              {/* Embedded Token Claims Mapping */}
-                              <div
-                                style={{
-                                  borderTop: '1px solid #E5E7EB',
-                                  paddingTop: '12px',
-                                  background: '#FAFAFA',
-                                  border: '1px solid #E5E7EB',
-                                  borderRadius: '6px',
-                                  padding: '12px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    OIDC ID Token Claims Mapping
-                                    <span
-                                      className="pill"
-                                      style={{
-                                        background: '#F5F3FF',
-                                        color: '#6D28D9',
-                                        border: '1px solid #DDD6FE',
-                                        fontSize: '10.5px',
-                                        padding: '1px 7px',
-                                        fontWeight: 500,
-                                        borderRadius: '9999px',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '3px'
-                                      }}
-                                    >
-                                      <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                    </span>
-                                  </span>
-                                  <span style={{ fontSize: '11px', color: '#6B7280' }}>
-                                    Standard &amp; Custom Claims
-                                  </span>
-                                </div>
+                              {/* Grant Types* */}
+                              <div>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '8px' }}>
+                                  Grant Types <span style={{ color: '#DC2626' }}>*</span>
+                                </label>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+                                  {[
+                                    { id: 'Authorization Code', label: 'Authorization Code' },
+                                    { id: 'Refresh Token', label: 'Refresh Token' }
+                                  ].map((grant) => {
+                                    const rawGrants: string[] =
+                                      activeMapping.grantTypes !== undefined
+                                        ? activeMapping.grantTypes
+                                        : ['Authorization Code'];
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
-                                  {(activeMapping.tokenClaims || [
-                                    { source: 'sub', target: 'sub', isStandard: true },
-                                    { source: 'email', target: 'email', isStandard: true },
-                                    { source: 'name', target: 'name', isStandard: true },
-                                    { source: 'roles', target: 'roles', isStandard: true }
-                                  ]).map((claim: any, idx: number) => (
-                                    <div
-                                      key={idx}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '10px',
-                                        background: '#FFFFFF',
-                                        border: '1px solid #E5E7EB',
-                                        borderRadius: '4px',
-                                        padding: '4px 8px',
-                                        fontSize: '11.5px'
-                                      }}
-                                    >
-                                      <span style={{ fontFamily: 'var(--mono)', color: '#374151', minWidth: '120px' }}>
-                                        {claim.source}
-                                      </span>
-                                      <span style={{ color: '#1D4ED8', fontWeight: 700 }}>→</span>
-                                      <span style={{ fontFamily: 'var(--mono)', color: '#111827', fontWeight: 600, flex: 1 }}>
-                                        {claim.target}
-                                      </span>
-                                      {claim.isStandard ? (
-                                        <span className="pill pill-muted" style={{ fontSize: '9.5px' }}>
-                                          Core Claim
-                                        </span>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleRemoveOidcClaim(idx)}
-                                          style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', padding: 0 }}
-                                        >
-                                          <TrashIcon size={11} />
-                                        </button>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
+                                    const isChecked = rawGrants.some((g: string) => {
+                                      if (grant.id === 'Authorization Code') return g.toLowerCase() === 'authorization code' || g.toLowerCase() === 'authorization_code';
+                                      if (grant.id === 'Refresh Token') return g.toLowerCase() === 'refresh token' || g.toLowerCase() === 'refresh_token';
+                                      return g === grant.id;
+                                    });
 
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                  <input
-                                    type="text"
-                                    placeholder="Source claim (e.g. upn)"
-                                    value={newOidcClaimSource}
-                                    onChange={(e) => setNewOidcClaimSource(e.target.value)}
-                                    style={{ flex: 1, padding: '4px 8px', fontSize: '11.5px', borderRadius: '4px', border: '1px solid #D1D5DB', fontFamily: 'var(--mono)' }}
-                                  />
-                                  <span style={{ color: '#9CA3AF', alignSelf: 'center' }}>→</span>
-                                  <input
-                                    type="text"
-                                    placeholder="Target claim (e.g. preferred_username)"
-                                    value={newOidcClaimTarget}
-                                    onChange={(e) => setNewOidcClaimTarget(e.target.value)}
-                                    style={{ flex: 1, padding: '4px 8px', fontSize: '11.5px', borderRadius: '4px', border: '1px solid #D1D5DB', fontFamily: 'var(--mono)' }}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline btn-sm"
-                                    onClick={handleAddOidcClaim}
-                                    disabled={!newOidcClaimSource.trim() || !newOidcClaimTarget.trim()}
-                                  >
-                                    + Add Claim
-                                  </button>
+                                    return (
+                                      <label
+                                        key={grant.id}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          fontSize: '12.5px',
+                                          color: '#374151',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            let nextGrants = [...rawGrants];
+                                            if (e.target.checked) {
+                                              if (!isChecked) nextGrants.push(grant.id);
+                                            } else {
+                                              nextGrants = nextGrants.filter((g: string) => {
+                                                if (grant.id === 'Authorization Code') return g.toLowerCase() !== 'authorization code' && g.toLowerCase() !== 'authorization_code';
+                                                if (grant.id === 'Refresh Token') return g.toLowerCase() !== 'refresh token' && g.toLowerCase() !== 'refresh_token';
+                                                return g !== grant.id;
+                                              });
+                                            }
+                                            updateActiveMapping({ grantTypes: nextGrants });
+                                          }}
+                                          style={{ width: '15px', height: '15px' }}
+                                        />
+                                        <span>{grant.label}</span>
+                                      </label>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             </div>
                           ) : (
-                            /* ===== SAML 2.0 APPLICATION FORM ===== */
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                              {/* Display Name */}
+                            /* ===== 1. SINGLE SIGN-ON (SAML 2.0) ===== */
+                            <div className="card" style={{ padding: '20px', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                              <div style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '10px' }}>
+                                <h3 style={{ fontSize: '14.5px', fontWeight: 700, color: '#111827', margin: 0 }}>
+                                  Single Sign-On (SAML 2.0)
+                                </h3>
+                                <p style={{ fontSize: '12px', color: '#6B7280', margin: '3px 0 0 0' }}>
+                                  Configure SAML 2.0 Service Provider endpoints and entity parameters.
+                                </p>
+                              </div>
+
+                              {/* ACS URL* */}
                               <div>
-                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '3px' }}>
-                                  Application Display Name <span style={{ color: '#DC2626' }}>*</span>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                                  ACS URL <span style={{ color: '#DC2626' }}>*</span>
                                 </label>
                                 <input
+                                  type="text"
                                   className="input"
-                                  style={{ fontSize: '12.5px', padding: '6px 10px' }}
-                                  value={activeMapping.targetName || activeAsset.name}
-                                  onChange={(e) => updateActiveMapping({ targetName: e.target.value })}
-                                />
-                                <span style={{ fontSize: '11px', color: '#6B7280', marginTop: '2px', display: 'block' }}>
-                                  Source in Meridian ID: <code>{activeAsset.name}</code> (SAML 2.0 Service Provider)
-                                </span>
-                              </div>
-
-                              {/* Entity ID / Issuer */}
-                              <div>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    Target Entity ID / Issuer <span style={{ color: '#DC2626' }}>*</span>
-                                    <span
-                                      className="pill"
-                                      style={{
-                                        background: '#F5F3FF',
-                                        color: '#6D28D9',
-                                        border: '1px solid #DDD6FE',
-                                        fontSize: '10.5px',
-                                        padding: '1px 7px',
-                                        fontWeight: 500,
-                                        borderRadius: '9999px',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '3px'
-                                      }}
-                                    >
-                                      <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                    </span>
-                                  </label>
-                                  <span style={{ fontSize: '11px', color: '#6B7280', fontFamily: 'var(--mono)' }}>
-                                    Source: https://meridianid.com/saml/{activeAsset.name.toLowerCase()}/metadata
-                                  </span>
-                                </div>
-                                <input
-                                  className="input mono"
-                                  style={{ fontSize: '12px', padding: '6px 10px' }}
-                                  value={activeMapping.entityId || `https://idp.hexnode.com/saml/${activeAsset.name.toLowerCase()}/metadata`}
-                                  onChange={(e) => updateActiveMapping({ entityId: e.target.value })}
+                                  placeholder="https://example.com/acs"
+                                  value={activeMapping.acsUrl ?? (activeMapping.ssoUrl || '')}
+                                  onChange={(e) => updateActiveMapping({ acsUrl: e.target.value, ssoUrl: e.target.value })}
+                                  style={{ fontSize: '12.5px', padding: '7px 10px', fontFamily: 'var(--mono)', width: '100%' }}
+                                  required
                                 />
                               </div>
 
-                              {/* Single Sign-On (ACS) URL */}
+                              {/* Entity ID* */}
                               <div>
-                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-                                  Single Sign-On (ACS) URL <span style={{ color: '#DC2626' }}>*</span>
-                                  <span
-                                    className="pill"
-                                    style={{
-                                      background: '#F5F3FF',
-                                      color: '#6D28D9',
-                                      border: '1px solid #DDD6FE',
-                                      fontSize: '10.5px',
-                                      padding: '1px 7px',
-                                      fontWeight: 500,
-                                      borderRadius: '9999px',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '3px'
-                                    }}
-                                  >
-                                    <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                  </span>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                                  Entity ID <span style={{ color: '#DC2626' }}>*</span>
                                 </label>
                                 <input
-                                  className="input mono"
-                                  style={{ fontSize: '12px', padding: '6px 10px' }}
-                                  value={activeMapping.ssoUrl || `https://idp.hexnode.com/saml/${activeAsset.name.toLowerCase()}/sso`}
-                                  onChange={(e) => updateActiveMapping({ ssoUrl: e.target.value })}
+                                  type="text"
+                                  className="input"
+                                  placeholder="https://example.com/entity"
+                                  value={activeMapping.entityId ?? ''}
+                                  onChange={(e) => updateActiveMapping({ entityId: e.target.value })}
+                                  style={{ fontSize: '12.5px', padding: '7px 10px', fontFamily: 'var(--mono)', width: '100%' }}
+                                  required
                                 />
                               </div>
 
-                              {/* NameID Claim & Signing Algorithm */}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '3px' }}>
-                                    NameID Claim Format
-                                  </label>
-                                  <select
-                                    className="select"
-                                    style={{ fontSize: '12px', padding: '6px 8px' }}
-                                    value={activeMapping.nameIdClaim || 'emailAddress'}
-                                    onChange={(e) => updateActiveMapping({ nameIdClaim: e.target.value })}
-                                  >
-                                    <option value="emailAddress">urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</option>
-                                    <option value="persistent">urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</option>
-                                    <option value="unspecified">urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</option>
-                                    <option value="transient">urn:oasis:names:tc:SAML:2.0:nameid-format:transient</option>
-                                  </select>
-                                </div>
-
-                                <div>
-                                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '3px' }}>
-                                    Signing Algorithm
-                                  </label>
-                                  <select
-                                    className="select"
-                                    style={{ fontSize: '12px', padding: '6px 8px' }}
-                                    value={activeMapping.signingAlg || 'SHA-256'}
-                                    onChange={(e) => updateActiveMapping({ signingAlg: e.target.value })}
-                                  >
-                                    <option value="SHA-256">SHA-256 (Recommended &amp; Default)</option>
-                                    <option value="SHA-1">SHA-1 (Legacy SP compatibility)</option>
-                                  </select>
-                                </div>
+                              {/* Audience URI */}
+                              <div>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                                  Audience URI
+                                </label>
+                                <input
+                                  type="text"
+                                  className="input"
+                                  placeholder="https://example.com/audience"
+                                  value={activeMapping.audienceUri ?? ''}
+                                  onChange={(e) => updateActiveMapping({ audienceUri: e.target.value })}
+                                  style={{ fontSize: '12.5px', padding: '7px 10px', fontFamily: 'var(--mono)', width: '100%' }}
+                                />
                               </div>
 
-                              {/* Security Toggles */}
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E5E7EB', paddingTop: '10px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: '12.5px', color: '#374151' }}>Sign SAML Assertion</span>
-                                  <label className="toggle">
-                                    <input
-                                      type="checkbox"
-                                      checked={activeMapping.signAssertion !== false}
-                                      onChange={(e) => updateActiveMapping({ signAssertion: e.target.checked })}
-                                    />
-                                    <span className="toggle-track" />
-                                  </label>
-                                </div>
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: '12.5px', color: '#374151' }}>Sign SAML Response</span>
-                                  <label className="toggle">
-                                    <input
-                                      type="checkbox"
-                                      checked={activeMapping.signResponse !== false}
-                                      onChange={(e) => updateActiveMapping({ signResponse: e.target.checked })}
-                                    />
-                                    <span className="toggle-track" />
-                                  </label>
-                                </div>
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: '12.5px', color: '#374151' }}>Encrypt Assertion (XML Encryption)</span>
-                                  <label className="toggle">
-                                    <input
-                                      type="checkbox"
-                                      checked={activeMapping.encryptAssertion === true}
-                                      onChange={(e) => updateActiveMapping({ encryptAssertion: e.target.checked })}
-                                    />
-                                    <span className="toggle-track" />
-                                  </label>
-                                </div>
-                              </div>
-
-                              {/* Embedded Inline SAML Attribute Statements */}
-                              <div
-                                style={{
-                                  borderTop: '1px solid #E5E7EB',
-                                  paddingTop: '12px',
-                                  background: '#FAFAFA',
-                                  border: '1px solid #E5E7EB',
-                                  borderRadius: '6px',
-                                  padding: '12px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    SAML Attribute Statements
-                                    <span
-                                      className="pill"
-                                      style={{
-                                        background: '#F5F3FF',
-                                        color: '#6D28D9',
-                                        border: '1px solid #DDD6FE',
-                                        fontSize: '10.5px',
-                                        padding: '1px 7px',
-                                        fontWeight: 500,
-                                        borderRadius: '9999px',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '3px'
-                                      }}
-                                    >
-                                      <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                    </span>
-                                  </span>
-                                  <span style={{ fontSize: '11px', color: '#6B7280' }}>
-                                    Directional claims mapping
-                                  </span>
-                                </div>
-
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
-                                  {(activeMapping.attributeClaims || [
-                                    { source: 'mail', target: 'email', isStandard: true },
-                                    { source: 'displayName', target: 'name', isStandard: true },
-                                    { source: 'department', target: 'department', isStandard: true },
-                                    { source: 'memberOf', target: 'groups', isStandard: true }
-                                  ]).map((claim: any, idx: number) => (
-                                    <div
-                                      key={idx}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '10px',
-                                        background: '#FFFFFF',
-                                        border: '1px solid #E5E7EB',
-                                        borderRadius: '4px',
-                                        padding: '4px 8px',
-                                        fontSize: '11.5px'
-                                      }}
-                                    >
-                                      <span style={{ fontFamily: 'var(--mono)', color: '#374151', minWidth: '120px' }}>
-                                        {claim.source}
-                                      </span>
-                                      <span style={{ color: '#1D4ED8', fontWeight: 700 }}>→</span>
-                                      <span style={{ fontFamily: 'var(--mono)', color: '#111827', fontWeight: 600, flex: 1 }}>
-                                        {claim.target}
-                                      </span>
-                                      {claim.isStandard ? (
-                                        <span className="pill pill-muted" style={{ fontSize: '9.5px' }}>
-                                          Core Claim
-                                        </span>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleRemoveAttributeClaim(idx)}
-                                          style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', padding: 0 }}
-                                        >
-                                          <TrashIcon size={11} />
-                                        </button>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                  <input
-                                    type="text"
-                                    placeholder="Source attribute (e.g. employeeId)"
-                                    value={newSourceAttr}
-                                    onChange={(e) => setNewSourceAttr(e.target.value)}
-                                    style={{ flex: 1, padding: '4px 8px', fontSize: '11.5px', borderRadius: '4px', border: '1px solid #D1D5DB', fontFamily: 'var(--mono)' }}
-                                  />
-                                  <span style={{ color: '#9CA3AF', alignSelf: 'center' }}>→</span>
-                                  <input
-                                    type="text"
-                                    placeholder="Hexnode claim (e.g. employeeNumber)"
-                                    value={newTargetClaim}
-                                    onChange={(e) => setNewTargetClaim(e.target.value)}
-                                    style={{ flex: 1, padding: '4px 8px', fontSize: '11.5px', borderRadius: '4px', border: '1px solid #D1D5DB', fontFamily: 'var(--mono)' }}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline btn-sm"
-                                    onClick={handleAddAttributeClaim}
-                                    disabled={!newSourceAttr.trim() || !newTargetClaim.trim()}
-                                  >
-                                    + Add Claim
-                                  </button>
-                                </div>
+                              {/* Name ID Format */}
+                              <div>
+                                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                                  Name ID Format
+                                </label>
+                                <input
+                                  type="text"
+                                  className="input"
+                                  placeholder="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+                                  value={
+                                    activeMapping.nameIdFormat !== undefined
+                                      ? activeMapping.nameIdFormat
+                                      : (activeMapping.nameIdClaim
+                                          ? `urn:oasis:names:tc:SAML:1.1:nameid-format:${activeMapping.nameIdClaim}`
+                                          : 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress')
+                                  }
+                                  onChange={(e) => updateActiveMapping({ nameIdFormat: e.target.value })}
+                                  style={{ fontSize: '12.5px', padding: '7px 10px', fontFamily: 'var(--mono)', width: '100%' }}
+                                />
                               </div>
                             </div>
                           )}
@@ -3033,7 +2946,16 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                             activeAsset.name.includes('Access') ||
                             activeAsset.name.includes('Contractor')) ? (
                             /* ===== CONDITIONAL ACCESS POLICY WORKSPACE ===== */
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '20px',
+                                maxHeight: 'calc(100vh - 220px)',
+                                overflowY: 'auto',
+                                paddingRight: '8px'
+                              }}
+                            >
                               {activeAsset.name.includes('Contractor') && (
                                 <div className="alert-banner alert-banner-warning">
                                   <span className="alert-banner-icon">
@@ -3045,250 +2967,1151 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                                 </div>
                               )}
 
-                              {/* Subsection 1: Conditions */}
-                              <div className="card" style={{ padding: '14px', background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
-                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827', display: 'block', marginBottom: '10px' }}>
-                                  1. Access Conditions
-                                </span>
+                              {/* ========================================================
+                                  1. CONDITIONS
+                                 ======================================================== */}
+                              <div className="card" style={{ padding: '18px', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '8px' }}>
+                                <div style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '10px', marginBottom: '16px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <h3 style={{ fontSize: '14.5px', fontWeight: 700, color: '#111827', margin: 0 }}>
+                                      1. Conditions
+                                    </h3>
+                                    <span
+                                      className="pill"
+                                      style={{
+                                        background: '#EFF6FF',
+                                        color: '#1D4ED8',
+                                        border: '1px solid #BFDBFE',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        padding: '2px 8px',
+                                        borderRadius: '9999px'
+                                      }}
+                                    >
+                                      Context Rules
+                                    </span>
+                                  </div>
+                                  <p style={{ fontSize: '12px', color: '#6B7280', margin: '3px 0 0 0' }}>
+                                    Specify client device posture, physical location, network perimeter, and threat risk levels required for access evaluation.
+                                  </p>
+                                </div>
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                  <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
-                                      Client Platforms
-                                    </label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                      {['macOS', 'Windows', 'iOS', 'Android', 'Linux'].map((platform) => {
-                                        const current = activeMapping.platforms || ['macOS', 'Windows', 'iOS', 'Android'];
-                                        const isChecked = current.includes(platform);
-                                        return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                  {/* ----------------------------------------------------
+                                      1.1 Device Trust
+                                     ---------------------------------------------------- */}
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', padding: '14px', background: '#FAFAFA' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                                      <div>
+                                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#1F2937' }}>
+                                          Device Trust
+                                        </span>
+                                        <p style={{ fontSize: '11.5px', color: '#6B7280', margin: '2px 0 0 0' }}>
+                                          Filter requests by operating platform, UEM enrollment, and compliance posture.
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    {/* Device Platform multi-select */}
+                                    <div style={{ marginBottom: '14px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                        <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                          Device Platform
+                                        </label>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                           <button
-                                            key={platform}
                                             type="button"
                                             onClick={() => {
-                                              const updated = isChecked
-                                                ? current.filter((p: string) => p !== platform)
-                                                : [...current, platform];
-                                              updateActiveMapping({ platforms: updated });
+                                              const all = ['Android', 'iOS', 'macOS', 'Windows', 'Linux'];
+                                              updateActiveMapping({ devicePlatforms: all, platforms: all });
                                             }}
                                             style={{
+                                              background: 'none',
+                                              border: 'none',
+                                              color: '#1D4ED8',
                                               fontSize: '11.5px',
-                                              padding: '3px 8px',
-                                              borderRadius: '4px',
-                                              border: `1px solid ${isChecked ? '#BFDBFE' : '#D1D5DB'}`,
+                                              fontWeight: 600,
+                                              cursor: 'pointer',
+                                              padding: 0
+                                            }}
+                                          >
+                                            Select all
+                                          </button>
+                                          <span style={{ color: '#D1D5DB' }}>|</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              updateActiveMapping({ devicePlatforms: [], platforms: [] });
+                                            }}
+                                            style={{
+                                              background: 'none',
+                                              border: 'none',
+                                              color: '#6B7280',
+                                              fontSize: '11.5px',
+                                              fontWeight: 500,
+                                              cursor: 'pointer',
+                                              padding: 0
+                                            }}
+                                          >
+                                            Clear All
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                        {['Android', 'iOS', 'macOS', 'Windows', 'Linux'].map((plat) => {
+                                          const selectedPlats: string[] =
+                                            activeMapping.devicePlatforms ||
+                                            activeMapping.platforms ||
+                                            ['Android', 'iOS', 'macOS', 'Windows', 'Linux'];
+                                          const isChecked = selectedPlats.includes(plat);
+                                          return (
+                                            <button
+                                              key={plat}
+                                              type="button"
+                                              onClick={() => {
+                                                const updated = isChecked
+                                                  ? selectedPlats.filter((p: string) => p !== plat)
+                                                  : [...selectedPlats, plat];
+                                                updateActiveMapping({ devicePlatforms: updated, platforms: updated });
+                                              }}
+                                              style={{
+                                                fontSize: '12px',
+                                                fontWeight: 500,
+                                                padding: '5px 12px',
+                                                borderRadius: '6px',
+                                                border: `1px solid ${isChecked ? '#2563EB' : '#D1D5DB'}`,
+                                                background: isChecked ? '#EFF6FF' : '#FFFFFF',
+                                                color: isChecked ? '#1D4ED8' : '#374151',
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                              }}
+                                            >
+                                              <span
+                                                style={{
+                                                  width: '14px',
+                                                  height: '14px',
+                                                  borderRadius: '3px',
+                                                  border: `1px solid ${isChecked ? '#2563EB' : '#9CA3AF'}`,
+                                                  background: isChecked ? '#2563EB' : '#FFFFFF',
+                                                  display: 'inline-flex',
+                                                  alignItems: 'center',
+                                                  justifyContent: 'center',
+                                                  color: '#FFFFFF',
+                                                  fontSize: '10px'
+                                                }}
+                                              >
+                                                {isChecked ? '✓' : ''}
+                                              </span>
+                                              {plat}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    {/* Device State dropdown */}
+                                    <div style={{ marginBottom: (activeMapping.deviceState || 'Managed By UEM') === 'Managed By UEM' ? '12px' : '0' }}>
+                                      <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                                        Device State
+                                      </label>
+                                      <select
+                                        className="select"
+                                        style={{ fontSize: '12px', padding: '6px 10px', width: '100%', background: '#FFFFFF' }}
+                                        value={activeMapping.deviceState || 'Managed By UEM'}
+                                        onChange={(e) => updateActiveMapping({ deviceState: e.target.value })}
+                                      >
+                                        <option value="Managed By UEM">Managed By UEM</option>
+                                        <option value="Browser context signals">Browser context signals</option>
+                                      </select>
+                                    </div>
+
+                                    {/* Compliance Status: Shown ONLY when 'Managed By UEM' is selected */}
+                                    {(activeMapping.deviceState || 'Managed By UEM') === 'Managed By UEM' && (
+                                      <div
+                                        style={{
+                                          padding: '12px',
+                                          background: '#FFFFFF',
+                                          border: '1px solid #E5E7EB',
+                                          borderRadius: '6px'
+                                        }}
+                                      >
+                                        <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                                          Compliance Status
+                                        </label>
+                                        <select
+                                          className="select"
+                                          style={{ fontSize: '12px', padding: '6px 10px', width: '100%' }}
+                                          value={activeMapping.complianceStatus || 'Compliant'}
+                                          onChange={(e) => updateActiveMapping({ complianceStatus: e.target.value })}
+                                        >
+                                          <option value="Compliant">Compliant</option>
+                                          <option value="Non-compliant">Non-compliant</option>
+                                        </select>
+                                        <span style={{ fontSize: '11px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
+                                          Requires device to satisfy active Hexnode UEM compliance criteria.
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* ----------------------------------------------------
+                                      1.2 Geo Restriction
+                                     ---------------------------------------------------- */}
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', padding: '14px', background: '#FAFAFA' }}>
+                                    <div style={{ marginBottom: '10px' }}>
+                                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#1F2937' }}>
+                                        Geo Restriction
+                                      </span>
+                                      <p style={{ fontSize: '11.5px', color: '#6B7280', margin: '2px 0 0 0' }}>
+                                        Restrict or allow authentication requests based on country locations or precise geofences.
+                                      </p>
+                                    </div>
+
+                                    {/* Included vs Excluded Tabs */}
+                                    <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #E5E7EB', paddingBottom: '8px', marginBottom: '14px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCaGeoTab('included')}
+                                        style={{
+                                          fontSize: '12px',
+                                          fontWeight: 600,
+                                          padding: '5px 14px',
+                                          borderRadius: '6px',
+                                          border: `1px solid ${caGeoTab === 'included' ? '#1D4ED8' : '#D1D5DB'}`,
+                                          background: caGeoTab === 'included' ? '#1D4ED8' : '#FFFFFF',
+                                          color: caGeoTab === 'included' ? '#FFFFFF' : '#4B5563',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        Included ({(activeMapping.geoIncluded || [{ id: 'geo-1', name: 'United States', type: 'Country', mode: 'Included' }, { id: 'geo-2', name: 'San Francisco HQ', type: 'Fence', mode: 'Included' }]).length})
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCaGeoTab('excluded')}
+                                        style={{
+                                          fontSize: '12px',
+                                          fontWeight: 600,
+                                          padding: '5px 14px',
+                                          borderRadius: '6px',
+                                          border: `1px solid ${caGeoTab === 'excluded' ? '#1D4ED8' : '#D1D5DB'}`,
+                                          background: caGeoTab === 'excluded' ? '#1D4ED8' : '#FFFFFF',
+                                          color: caGeoTab === 'excluded' ? '#FFFFFF' : '#4B5563',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        Excluded ({(activeMapping.geoExcluded || []).length})
+                                      </button>
+                                    </div>
+
+                                    {/* Action Bar: Add Country & Add Fence */}
+                                    <div
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.3fr)',
+                                        gap: '10px',
+                                        marginBottom: '14px',
+                                        background: '#FFFFFF',
+                                        padding: '12px',
+                                        borderRadius: '6px',
+                                        border: '1px solid #E5E7EB'
+                                      }}
+                                    >
+                                      {/* Add Country */}
+                                      <div>
+                                        <label style={{ fontSize: '11.5px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                                          Add Country
+                                        </label>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <select
+                                            className="select"
+                                            style={{ fontSize: '12px', padding: '5px 8px', flex: 1 }}
+                                            value={caCountrySelect}
+                                            onChange={(e) => setCaCountrySelect(e.target.value)}
+                                          >
+                                            {ALL_COUNTRIES.map((c) => (
+                                              <option key={c} value={c}>{c}</option>
+                                            ))}
+                                          </select>
+                                          <button
+                                            type="button"
+                                            className="btn btn-outline btn-sm"
+                                            style={{ fontSize: '11.5px', whiteSpace: 'nowrap' }}
+                                            onClick={() => {
+                                              if (!caCountrySelect) return;
+                                              const currentList = caGeoTab === 'included'
+                                                ? (activeMapping.geoIncluded || [{ id: 'geo-1', name: 'United States', type: 'Country', mode: 'Included' }, { id: 'geo-2', name: 'San Francisco HQ', type: 'Fence', mode: 'Included' }])
+                                                : (activeMapping.geoExcluded || []);
+                                              if (currentList.some((g: any) => g.name === caCountrySelect && g.type === 'Country')) {
+                                                showToast(`${caCountrySelect} is already in ${caGeoTab} list`);
+                                                return;
+                                              }
+                                              const newItem = {
+                                                id: `country-${Date.now()}`,
+                                                name: caCountrySelect,
+                                                type: 'Country' as const,
+                                                mode: caGeoTab === 'included' ? 'Included' as const : 'Excluded' as const
+                                              };
+                                              if (caGeoTab === 'included') {
+                                                updateActiveMapping({ geoIncluded: [...currentList, newItem] });
+                                              } else {
+                                                updateActiveMapping({ geoExcluded: [...currentList, newItem] });
+                                              }
+                                              showToast(`Added ${caCountrySelect} to ${caGeoTab} locations`);
+                                            }}
+                                          >
+                                            + Add Country
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Add Fence */}
+                                      <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                          <label style={{ fontSize: '11.5px', fontWeight: 600, color: '#374151' }}>
+                                            Add Fence
+                                          </label>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setFenceName('');
+                                              setFenceNameError('');
+                                              setIsFenceModalOpen(true);
+                                            }}
+                                            style={{
+                                              background: 'none',
+                                              border: 'none',
+                                              color: '#1D4ED8',
+                                              fontSize: '11px',
+                                              fontWeight: 600,
+                                              cursor: 'pointer',
+                                              padding: 0
+                                            }}
+                                          >
+                                            + Add a New Fence
+                                          </button>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <select
+                                            className="select"
+                                            style={{ fontSize: '12px', padding: '5px 8px', flex: 1 }}
+                                            value={caFenceSelect}
+                                            onChange={(e) => setCaFenceSelect(e.target.value)}
+                                          >
+                                            {availableFences.map((f) => (
+                                              <option key={f.id} value={f.name}>
+                                                {f.name} ({f.type})
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <button
+                                            type="button"
+                                            className="btn btn-outline btn-sm"
+                                            style={{ fontSize: '11.5px', whiteSpace: 'nowrap' }}
+                                            onClick={() => {
+                                              if (!caFenceSelect) return;
+                                              const currentList = caGeoTab === 'included'
+                                                ? (activeMapping.geoIncluded || [{ id: 'geo-1', name: 'United States', type: 'Country', mode: 'Included' }, { id: 'geo-2', name: 'San Francisco HQ', type: 'Fence', mode: 'Included' }])
+                                                : (activeMapping.geoExcluded || []);
+                                              if (currentList.some((g: any) => g.name === caFenceSelect && g.type === 'Fence')) {
+                                                showToast(`Fence "${caFenceSelect}" is already in ${caGeoTab} list`);
+                                                return;
+                                              }
+                                              const newItem = {
+                                                id: `fence-${Date.now()}`,
+                                                name: caFenceSelect,
+                                                type: 'Fence' as const,
+                                                mode: caGeoTab === 'included' ? 'Included' as const : 'Excluded' as const
+                                              };
+                                              if (caGeoTab === 'included') {
+                                                updateActiveMapping({ geoIncluded: [...currentList, newItem] });
+                                              } else {
+                                                updateActiveMapping({ geoExcluded: [...currentList, newItem] });
+                                              }
+                                              showToast(`Added fence "${caFenceSelect}" to ${caGeoTab} locations`);
+                                            }}
+                                          >
+                                            + Add Fence
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Geo Table: Name, Type, Mode */}
+                                    {(() => {
+                                      const items: Array<{ id: string; name: string; type: string; mode: string }> =
+                                        caGeoTab === 'included'
+                                          ? (activeMapping.geoIncluded || [
+                                              { id: 'geo-1', name: 'United States', type: 'Country', mode: 'Included' },
+                                              { id: 'geo-2', name: 'San Francisco HQ', type: 'Fence', mode: 'Included' }
+                                            ])
+                                          : (activeMapping.geoExcluded || []);
+
+                                      if (items.length === 0) {
+                                        return (
+                                          <div
+                                            style={{
+                                              padding: '24px 16px',
+                                              textAlign: 'center',
+                                              background: '#FFFFFF',
+                                              border: '1px dashed #D1D5DB',
+                                              borderRadius: '6px'
+                                            }}
+                                          >
+                                            <div style={{ color: '#9CA3AF', fontSize: '13px', fontWeight: 500, marginBottom: '4px' }}>
+                                              {caGeoTab === 'included'
+                                                ? 'No included countries or geofences configured'
+                                                : 'No excluded countries or geofences configured'}
+                                            </div>
+                                            <p style={{ fontSize: '11.5px', color: '#6B7280', margin: 0 }}>
+                                              {caGeoTab === 'included'
+                                                ? 'Add countries or geofences above to restrict authentication to designated zones.'
+                                                : 'No regions are blocked. Inbound requests from all permitted regions will be allowed.'}
+                                            </p>
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '6px', overflow: 'hidden' }}>
+                                          <table className="table" style={{ margin: 0, width: '100%', fontSize: '12px' }}>
+                                            <thead>
+                                              <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                                                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Name</th>
+                                                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', width: '100px' }}>Type</th>
+                                                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', width: '100px' }}>Mode</th>
+                                                <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, color: '#374151', width: '60px' }}>Action</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {items.map((item) => (
+                                                <tr key={item.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                                                  <td style={{ padding: '8px 12px', fontWeight: 500, color: '#111827' }}>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                      <span>{item.type === 'Country' ? '🌐' : '📍'}</span>
+                                                      {item.name}
+                                                    </span>
+                                                  </td>
+                                                  <td style={{ padding: '8px 12px', color: '#6B7280' }}>
+                                                    <span
+                                                      style={{
+                                                        padding: '1px 6px',
+                                                        borderRadius: '4px',
+                                                        background: '#F3F4F6',
+                                                        fontSize: '11px',
+                                                        fontWeight: 500
+                                                      }}
+                                                    >
+                                                      {item.type}
+                                                    </span>
+                                                  </td>
+                                                  <td style={{ padding: '8px 12px' }}>
+                                                    <span
+                                                      style={{
+                                                        padding: '2px 8px',
+                                                        borderRadius: '9999px',
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        background: item.mode === 'Included' ? '#EFF6FF' : '#FEF2F2',
+                                                        color: item.mode === 'Included' ? '#1D4ED8' : '#DC2626',
+                                                        border: `1px solid ${item.mode === 'Included' ? '#BFDBFE' : '#FECACA'}`
+                                                      }}
+                                                    >
+                                                      {item.mode}
+                                                    </span>
+                                                  </td>
+                                                  <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        if (caGeoTab === 'included') {
+                                                          const updated = items.filter((x) => x.id !== item.id);
+                                                          updateActiveMapping({ geoIncluded: updated });
+                                                        } else {
+                                                          const updated = items.filter((x) => x.id !== item.id);
+                                                          updateActiveMapping({ geoExcluded: updated });
+                                                        }
+                                                        showToast(`Removed ${item.name} from ${caGeoTab} list`);
+                                                      }}
+                                                      style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: '#9CA3AF',
+                                                        cursor: 'pointer',
+                                                        padding: '2px 4px'
+                                                      }}
+                                                      title="Remove entry"
+                                                    >
+                                                      <TrashIcon size={14} />
+                                                    </button>
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+
+                                  {/* ----------------------------------------------------
+                                      1.3 Network
+                                     ---------------------------------------------------- */}
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', padding: '14px', background: '#FAFAFA' }}>
+                                    <div style={{ marginBottom: '10px' }}>
+                                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#1F2937' }}>
+                                        Network
+                                      </span>
+                                      <p style={{ fontSize: '11.5px', color: '#6B7280', margin: '2px 0 0 0' }}>
+                                        Configure inbound source IP ranges, trusted corporate subnets, and excluded CIDRs.
+                                      </p>
+                                    </div>
+
+                                    {/* Prominent note that Excluded takes precedence */}
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        padding: '8px 12px',
+                                        background: '#FEF3C7',
+                                        border: '1px solid #FCD34D',
+                                        borderRadius: '6px',
+                                        marginBottom: '12px',
+                                        color: '#92400E',
+                                        fontSize: '11.5px'
+                                      }}
+                                    >
+                                      <span style={{ fontSize: '14px' }}>ℹ️</span>
+                                      <span>
+                                        <strong>Precedence Note:</strong> Excluded takes precedence over Included. If an IP matches both lists, it will be treated as excluded.
+                                      </span>
+                                    </div>
+
+                                    {/* Included vs Excluded Tabs */}
+                                    <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #E5E7EB', paddingBottom: '8px', marginBottom: '14px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCaNetworkTab('included')}
+                                        style={{
+                                          fontSize: '12px',
+                                          fontWeight: 600,
+                                          padding: '5px 14px',
+                                          borderRadius: '6px',
+                                          border: `1px solid ${caNetworkTab === 'included' ? '#1D4ED8' : '#D1D5DB'}`,
+                                          background: caNetworkTab === 'included' ? '#1D4ED8' : '#FFFFFF',
+                                          color: caNetworkTab === 'included' ? '#FFFFFF' : '#4B5563',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        Included
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCaNetworkTab('excluded')}
+                                        style={{
+                                          fontSize: '12px',
+                                          fontWeight: 600,
+                                          padding: '5px 14px',
+                                          borderRadius: '6px',
+                                          border: `1px solid ${caNetworkTab === 'excluded' ? '#1D4ED8' : '#D1D5DB'}`,
+                                          background: caNetworkTab === 'excluded' ? '#1D4ED8' : '#FFFFFF',
+                                          color: caNetworkTab === 'excluded' ? '#FFFFFF' : '#4B5563',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        Excluded ({(activeMapping.networkExcludedIPs || ['198.51.100.14']).length})
+                                      </button>
+                                    </div>
+
+                                    {/* Tab Body: Included */}
+                                    {caNetworkTab === 'included' && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                        <div style={{ display: 'flex', gap: '16px', background: '#FFFFFF', padding: '10px 14px', borderRadius: '6px', border: '1px solid #E5E7EB' }}>
+                                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, color: '#1F2937', cursor: 'pointer' }}>
+                                            <input
+                                              type="radio"
+                                              name="networkIncludedOption"
+                                              checked={(activeMapping.networkIncludedMode || 'any') === 'any'}
+                                              onChange={() => updateActiveMapping({ networkIncludedMode: 'any' })}
+                                            />
+                                            Any IP (default)
+                                          </label>
+                                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, color: '#1F2937', cursor: 'pointer' }}>
+                                            <input
+                                              type="radio"
+                                              name="networkIncludedOption"
+                                              checked={(activeMapping.networkIncludedMode || 'any') === 'specific'}
+                                              onChange={() => updateActiveMapping({ networkIncludedMode: 'specific' })}
+                                            />
+                                            Specific IP
+                                          </label>
+                                        </div>
+
+                                        {(activeMapping.networkIncludedMode || 'any') === 'any' ? (
+                                          <div style={{ padding: '14px', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '6px' }}>
+                                            <p style={{ fontSize: '12px', color: '#4B5563', margin: 0 }}>
+                                              Access requests from <strong>any inbound IP address</strong> will satisfy this network condition.
+                                            </p>
+                                          </div>
+                                        ) : (
+                                          /* Specific IP entry and table */
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                              <input
+                                                type="text"
+                                                className="input"
+                                                placeholder="Enter IPv4 or CIDR (e.g. 192.168.1.0/24 or 10.0.0.1)"
+                                                value={caNewIPInput}
+                                                onChange={(e) => setCaNewIPInput(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    const val = caNewIPInput.trim();
+                                                    if (!val) return;
+                                                    const current = activeMapping.networkIncludedIPs || ['10.0.0.0/8', '192.168.1.0/24'];
+                                                    if (current.includes(val)) {
+                                                      showToast(`${val} is already added`);
+                                                      return;
+                                                    }
+                                                    updateActiveMapping({ networkIncludedIPs: [...current, val] });
+                                                    setCaNewIPInput('');
+                                                    showToast(`Added ${val} to Included IPs`);
+                                                  }
+                                                }}
+                                                style={{ flex: 1, fontSize: '12px', padding: '6px 10px', fontFamily: 'var(--mono)' }}
+                                              />
+                                              <button
+                                                type="button"
+                                                className="btn btn-outline btn-sm"
+                                                onClick={() => {
+                                                  const val = caNewIPInput.trim();
+                                                  if (!val) return;
+                                                  const current = activeMapping.networkIncludedIPs || ['10.0.0.0/8', '192.168.1.0/24'];
+                                                  if (current.includes(val)) {
+                                                    showToast(`${val} is already added`);
+                                                    return;
+                                                  }
+                                                  updateActiveMapping({ networkIncludedIPs: [...current, val] });
+                                                  setCaNewIPInput('');
+                                                  showToast(`Added ${val} to Included IPs`);
+                                                }}
+                                              >
+                                                + Add IP
+                                              </button>
+                                            </div>
+
+                                            {/* Specific IP Table */}
+                                            {(() => {
+                                              const ips: string[] = activeMapping.networkIncludedIPs || ['10.0.0.0/8', '192.168.1.0/24'];
+                                              if (ips.length === 0) {
+                                                return (
+                                                  <div style={{ padding: '20px', textAlign: 'center', background: '#FFFFFF', border: '1px dashed #D1D5DB', borderRadius: '6px' }}>
+                                                    <span style={{ fontSize: '12px', color: '#6B7280' }}>
+                                                      No specific IP addresses added yet. Enter an IPv4 address or CIDR range above and click Add IP.
+                                                    </span>
+                                                  </div>
+                                                );
+                                              }
+                                              return (
+                                                <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '6px', overflow: 'hidden' }}>
+                                                  <table className="table" style={{ margin: 0, width: '100%', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                                                        <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>IP / CIDR Range</th>
+                                                        <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, width: '100px' }}>Mode</th>
+                                                        <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, width: '60px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {ips.map((ip) => (
+                                                        <tr key={ip} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                                                          <td style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontWeight: 500, color: '#111827' }}>
+                                                            {ip}
+                                                          </td>
+                                                          <td style={{ padding: '8px 12px' }}>
+                                                            <span style={{ padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: 600, background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                                                              Included
+                                                            </span>
+                                                          </td>
+                                                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => {
+                                                                const updated = ips.filter((x) => x !== ip);
+                                                                updateActiveMapping({ networkIncludedIPs: updated });
+                                                                showToast(`Removed ${ip}`);
+                                                              }}
+                                                              style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: '2px 4px' }}
+                                                            >
+                                                              <TrashIcon size={14} />
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              );
+                                            })()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {/* Tab Body: Excluded */}
+                                    {caNetworkTab === 'excluded' && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                          <input
+                                            type="text"
+                                            className="input"
+                                            placeholder="Enter IPv4 or CIDR to exclude (e.g. 198.51.100.14 or 172.16.0.0/12)"
+                                            value={caNewIPInput}
+                                            onChange={(e) => setCaNewIPInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                const val = caNewIPInput.trim();
+                                                if (!val) return;
+                                                const current = activeMapping.networkExcludedIPs || ['198.51.100.14'];
+                                                if (current.includes(val)) {
+                                                  showToast(`${val} is already in Excluded list`);
+                                                  return;
+                                                }
+                                                updateActiveMapping({ networkExcludedIPs: [...current, val] });
+                                                setCaNewIPInput('');
+                                                showToast(`Added ${val} to Excluded IPs`);
+                                              }
+                                            }}
+                                            style={{ flex: 1, fontSize: '12px', padding: '6px 10px', fontFamily: 'var(--mono)' }}
+                                          />
+                                          <button
+                                            type="button"
+                                            className="btn btn-outline btn-sm"
+                                            onClick={() => {
+                                              const val = caNewIPInput.trim();
+                                              if (!val) return;
+                                              const current = activeMapping.networkExcludedIPs || ['198.51.100.14'];
+                                              if (current.includes(val)) {
+                                                showToast(`${val} is already in Excluded list`);
+                                                return;
+                                              }
+                                              updateActiveMapping({ networkExcludedIPs: [...current, val] });
+                                              setCaNewIPInput('');
+                                              showToast(`Added ${val} to Excluded IPs`);
+                                            }}
+                                          >
+                                            + Add IP
+                                          </button>
+                                        </div>
+
+                                        {/* Excluded IP Table */}
+                                        {(() => {
+                                          const excluded: string[] = activeMapping.networkExcludedIPs || ['198.51.100.14'];
+                                          if (excluded.length === 0) {
+                                            return (
+                                              <div style={{ padding: '20px', textAlign: 'center', background: '#FFFFFF', border: '1px dashed #D1D5DB', borderRadius: '6px' }}>
+                                                <span style={{ fontSize: '12px', color: '#6B7280' }}>
+                                                  No excluded IP addresses or subnets. Traffic will not be blocked by network exclusion rules.
+                                                </span>
+                                              </div>
+                                            );
+                                          }
+                                          return (
+                                            <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '6px', overflow: 'hidden' }}>
+                                              <table className="table" style={{ margin: 0, width: '100%', fontSize: '12px' }}>
+                                                <thead>
+                                                  <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                                                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Excluded IP / CIDR</th>
+                                                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, width: '100px' }}>Mode</th>
+                                                    <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, width: '60px' }}>Action</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {excluded.map((ip) => (
+                                                    <tr key={ip} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                                                      <td style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontWeight: 500, color: '#111827' }}>
+                                                        {ip}
+                                                      </td>
+                                                      <td style={{ padding: '8px 12px' }}>
+                                                        <span style={{ padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: 600, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                                                          Excluded
+                                                        </span>
+                                                      </td>
+                                                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => {
+                                                            const updated = excluded.filter((x) => x !== ip);
+                                                            updateActiveMapping({ networkExcludedIPs: updated });
+                                                            showToast(`Removed ${ip} from Excluded`);
+                                                          }}
+                                                          style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: '2px 4px' }}
+                                                        >
+                                                          <TrashIcon size={14} />
+                                                        </button>
+                                                      </td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          );
+                                        })()}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* ----------------------------------------------------
+                                      1.4 Risk Based
+                                     ---------------------------------------------------- */}
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', padding: '14px', background: '#FAFAFA' }}>
+                                    <div style={{ marginBottom: '10px' }}>
+                                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#1F2937' }}>
+                                        Risk Based
+                                      </span>
+                                      <p style={{ fontSize: '11.5px', color: '#6B7280', margin: '2px 0 0 0' }}>
+                                        Evaluate user and sign-in risk scores computed from threat intelligence feeds.
+                                      </p>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                                      {[
+                                        { val: 'any', label: 'Any level (default)', desc: 'Evaluated regardless of risk score' },
+                                        { val: 'low', label: 'Low', desc: 'Triggers on low, medium, or high risk' },
+                                        { val: 'medium', label: 'Medium', desc: 'Triggers on medium or high anomaly score' },
+                                        { val: 'high', label: 'High', desc: 'Triggers only on confirmed high-risk threats' }
+                                      ].map((opt) => {
+                                        const current = activeMapping.riskLevel || 'any';
+                                        const isChecked = current === opt.val;
+                                        return (
+                                          <label
+                                            key={opt.val}
+                                            style={{
+                                              display: 'flex',
+                                              flexDirection: 'column',
+                                              padding: '10px 12px',
+                                              borderRadius: '6px',
+                                              border: `1px solid ${isChecked ? '#2563EB' : '#D1D5DB'}`,
                                               background: isChecked ? '#EFF6FF' : '#FFFFFF',
-                                              color: isChecked ? '#1D4ED8' : '#6B7280',
                                               cursor: 'pointer'
                                             }}
                                           >
-                                            {isChecked ? `✓ ${platform}` : platform}
-                                          </button>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                                              <input
+                                                type="radio"
+                                                name="riskLevelRadio"
+                                                value={opt.val}
+                                                checked={isChecked}
+                                                onChange={() => updateActiveMapping({ riskLevel: opt.val })}
+                                              />
+                                              <span style={{ fontSize: '12px', fontWeight: 600, color: isChecked ? '#1D4ED8' : '#111827' }}>
+                                                {opt.label}
+                                              </span>
+                                            </div>
+                                            <span style={{ fontSize: '11px', color: '#6B7280', paddingLeft: '18px' }}>
+                                              {opt.desc}
+                                            </span>
+                                          </label>
                                         );
                                       })}
                                     </div>
                                   </div>
+                                </div>
+                              </div>
 
-                                  <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-                                      Network Locations &amp; IP CIDRs
-                                      <span
-                                        className="pill"
-                                        style={{
-                                          background: '#F5F3FF',
-                                          color: '#6D28D9',
-                                          border: '1px solid #DDD6FE',
-                                          fontSize: '10.5px',
-                                          padding: '1px 7px',
-                                          fontWeight: 500,
-                                          borderRadius: '9999px',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '3px'
-                                        }}
-                                      >
-                                        <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                      </span>
-                                    </label>
-                                    <input
-                                      className="input"
-                                      style={{ fontSize: '12px', padding: '6px 10px' }}
-                                      value={activeMapping.ipConditions || 'Trusted Corporate CIDRs (10.0.0.0/8)'}
-                                      onChange={(e) => updateActiveMapping({ ipConditions: e.target.value })}
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-                                      Schedule Condition
-                                      <span
-                                        className="pill"
-                                        style={{
-                                          background: '#F5F3FF',
-                                          color: '#6D28D9',
-                                          border: '1px solid #DDD6FE',
-                                          fontSize: '10.5px',
-                                          padding: '1px 7px',
-                                          fontWeight: 500,
-                                          borderRadius: '9999px',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '3px'
-                                        }}
-                                      >
-                                        <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                      </span>
-                                    </label>
-                                    <input
-                                      className="input"
-                                      style={{ fontSize: '12px', padding: '6px 10px' }}
-                                      value={activeMapping.timeSchedule || (activeAsset.name.includes('Contractor') ? 'Outside Business Hours (09:00 - 18:00 UTC-08:00)' : 'Anytime')}
-                                      onChange={(e) => updateActiveMapping({ timeSchedule: e.target.value })}
-                                    />
-                                  </div>
-
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
-                                    <span style={{ fontSize: '12px', color: '#374151' }}>
-                                      Require device enrolled and compliant in Hexnode UEM
+                              {/* ========================================================
+                                  2. GRANT CONTROLS
+                                 ======================================================== */}
+                              <div className="card" style={{ padding: '18px', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '8px' }}>
+                                <div style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '10px', marginBottom: '14px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <h3 style={{ fontSize: '14.5px', fontWeight: 700, color: '#111827', margin: 0 }}>
+                                      2. Grant Controls
+                                    </h3>
+                                    <span
+                                      className="pill"
+                                      style={{
+                                        background: '#F5F3FF',
+                                        color: '#7C3AED',
+                                        border: '1px solid #DDD6FE',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        padding: '2px 8px',
+                                        borderRadius: '9999px'
+                                      }}
+                                    >
+                                      Enforcement Action
                                     </span>
-                                    <label className="toggle">
+                                  </div>
+                                  <p style={{ fontSize: '12px', color: '#6B7280', margin: '3px 0 0 0' }}>
+                                    Determine whether access is completely blocked or conditionally permitted under explicit authentication requirements.
+                                  </p>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                  {/* Block Access vs Allow Access Radio Options */}
+                                  <div style={{ display: 'flex', gap: '20px' }}>
+                                    <label
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        color: (activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'block' ? '#DC2626' : '#374151',
+                                        cursor: 'pointer',
+                                        padding: '8px 14px',
+                                        borderRadius: '6px',
+                                        border: `1px solid ${(activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'block' ? '#F87171' : '#E5E7EB'}`,
+                                        background: (activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'block' ? '#FEF2F2' : '#FFFFFF'
+                                      }}
+                                    >
                                       <input
-                                        type="checkbox"
-                                        checked={activeMapping.requireCompliantDevice !== false}
-                                        onChange={(e) => updateActiveMapping({ requireCompliantDevice: e.target.checked })}
+                                        type="radio"
+                                        name="grantTypeRadio"
+                                        value="block"
+                                        checked={(activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'block'}
+                                        onChange={() => updateActiveMapping({ grantType: 'block', grantAction: 'Block access' })}
                                       />
-                                      <span className="toggle-track" />
+                                      Block Access
                                     </label>
-                                  </div>
-                                </div>
-                              </div>
 
-                              {/* Subsection 2: Access Control */}
-                              <div className="card" style={{ padding: '14px', background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
-                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827', display: 'block', marginBottom: '10px' }}>
-                                  2. Access Control &amp; Enforcement
-                                </span>
-
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }}>
-                                  <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '3px' }}>
-                                      Enforcement Mode
-                                    </label>
-                                    <select
-                                      className="select"
-                                      style={{ fontSize: '12px', padding: '6px 8px' }}
-                                      value={activeMapping.targetEnforcement || 'Enforced'}
-                                      onChange={(e) => updateActiveMapping({ targetEnforcement: e.target.value })}
+                                    <label
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        color: (activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'allow' ? '#1D4ED8' : '#374151',
+                                        cursor: 'pointer',
+                                        padding: '8px 14px',
+                                        borderRadius: '6px',
+                                        border: `1px solid ${(activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'allow' ? '#93C5FD' : '#E5E7EB'}`,
+                                        background: (activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'allow' ? '#EFF6FF' : '#FFFFFF'
+                                      }}
                                     >
-                                      <option value="Enforced">Enforced (Active blocking / challenge)</option>
-                                      <option value="Report-only">Report-only (Audit evaluation only)</option>
-                                    </select>
-                                  </div>
-
-                                  <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-                                      Grant Action
-                                      <span
-                                        className="pill"
-                                        style={{
-                                          background: '#F5F3FF',
-                                          color: '#6D28D9',
-                                          border: '1px solid #DDD6FE',
-                                          fontSize: '10.5px',
-                                          padding: '1px 7px',
-                                          fontWeight: 500,
-                                          borderRadius: '9999px',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '3px'
-                                        }}
-                                      >
-                                        <SparkleIcon size={11} color="#7C3AED" /> Genie mapped
-                                      </span>
+                                      <input
+                                        type="radio"
+                                        name="grantTypeRadio"
+                                        value="allow"
+                                        checked={(activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'allow'}
+                                        onChange={() => updateActiveMapping({ grantType: 'allow', grantAction: 'Require step-up MFA' })}
+                                      />
+                                      Allow Access
                                     </label>
-                                    <select
-                                      className="select"
-                                      style={{ fontSize: '12px', padding: '6px 8px' }}
-                                      value={activeMapping.grantAction || (activeAsset.name.includes('Contractor') ? 'Block access' : 'Require step-up MFA')}
-                                      onChange={(e) => updateActiveMapping({ grantAction: e.target.value })}
+                                  </div>
+
+                                  {/* Show Access Specification dropdown ONLY for Allow Access */}
+                                  {(activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'allow' && (
+                                    <div
+                                      style={{
+                                        padding: '14px',
+                                        background: '#F9FAFB',
+                                        border: '1px solid #E5E7EB',
+                                        borderRadius: '6px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '6px'
+                                      }}
                                     >
-                                      <option value="Block access">Block access</option>
-                                      <option value="Require step-up MFA">Require step-up Multi-Factor Authentication</option>
-                                      <option value="Require compliant device">Grant access only with compliant device</option>
-                                    </select>
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
-                                    Allowed Authentication Factors
-                                  </label>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                    {['Hexnode Authenticator App', 'FIDO2 Security Key', 'SMS OTP', 'Push Notification'].map((factor) => {
-                                      const current = activeMapping.allowedFactors || ['Hexnode Authenticator App', 'FIDO2 Security Key', 'SMS OTP'];
-                                      const isChecked = current.includes(factor);
-                                      return (
-                                        <button
-                                          key={factor}
-                                          type="button"
-                                          onClick={() => {
-                                            const updated = isChecked
-                                              ? current.filter((f: string) => f !== factor)
-                                              : [...current, factor];
-                                            updateActiveMapping({ allowedFactors: updated });
-                                          }}
-                                          style={{
-                                            fontSize: '11.5px',
-                                            padding: '3px 8px',
-                                            borderRadius: '4px',
-                                            border: `1px solid ${isChecked ? '#BFDBFE' : '#D1D5DB'}`,
-                                            background: isChecked ? '#EFF6FF' : '#FFFFFF',
-                                            color: isChecked ? '#1D4ED8' : '#6B7280',
-                                            cursor: 'pointer'
-                                          }}
-                                        >
-                                          {isChecked ? `✓ ${factor}` : factor}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Subsection 3: Session Controls */}
-                              <div className="card" style={{ padding: '14px', background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
-                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827', display: 'block', marginBottom: '10px' }}>
-                                  3. Session Controls
-                                </span>
-
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                  <div>
-                                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '3px' }}>
-                                      Inactivity Timeout
-                                    </label>
-                                    <select
-                                      className="select"
-                                      style={{ fontSize: '12px', padding: '6px 8px' }}
-                                      value={activeMapping.sessionTimeout || '30 mins'}
-                                      onChange={(e) => updateActiveMapping({ sessionTimeout: e.target.value })}
-                                    >
-                                      <option value="15 mins">15 minutes</option>
-                                      <option value="30 mins">30 minutes</option>
-                                      <option value="1 hour">1 hour</option>
-                                      <option value="8 hours">8 hours</option>
-                                    </select>
-                                  </div>
-
-                                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <span style={{ fontSize: '12px', color: '#374151' }}>Persistent Browser Session</span>
-                                      <label className="toggle">
-                                        <input
-                                          type="checkbox"
-                                          checked={activeMapping.persistentSession === true}
-                                          onChange={(e) => updateActiveMapping({ persistentSession: e.target.checked })}
-                                        />
-                                        <span className="toggle-track" />
+                                      <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                        Access Specification
                                       </label>
+                                      <select
+                                        className="select"
+                                        style={{ fontSize: '12.5px', padding: '6px 10px', width: '100%', background: '#FFFFFF' }}
+                                        value={activeMapping.accessSpecification || 'Require Multifactor Authentication'}
+                                        onChange={(e) => updateActiveMapping({ accessSpecification: e.target.value })}
+                                      >
+                                        <option value="Require Password">Require Password</option>
+                                        <option value="Password less">Password less</option>
+                                        <option value="Require Multifactor Authentication">Require Multifactor Authentication</option>
+                                        <option value="Require Password Change">Require Password Change</option>
+                                        <option value="Password Change + Multifactor Authentication">Password Change + Multifactor Authentication</option>
+                                      </select>
+                                      <span style={{ fontSize: '11px', color: '#6B7280' }}>
+                                        Specifies the exact cryptographic or factor verification required before admitting user session.
+                                      </span>
                                     </div>
+                                  )}
+
+                                  {(activeMapping.grantType || (activeMapping.grantAction === 'Block access' ? 'block' : 'allow')) === 'block' && (
+                                    <div style={{ padding: '12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', color: '#991B1B', fontSize: '12px' }}>
+                                      <strong>Access Denied:</strong> All authentication attempts matching the defined conditions will be unconditionally blocked.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* ========================================================
+                                  3. SESSION CONTROLS
+                                 ======================================================== */}
+                              <div className="card" style={{ padding: '18px', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '8px' }}>
+                                <div style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '10px', marginBottom: '14px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <h3 style={{ fontSize: '14.5px', fontWeight: 700, color: '#111827', margin: 0 }}>
+                                      3. Session Controls
+                                    </h3>
+                                    <span
+                                      className="pill"
+                                      style={{
+                                        background: '#ECFDF5',
+                                        color: '#059669',
+                                        border: '1px solid #A7F3D0',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        padding: '2px 8px',
+                                        borderRadius: '9999px'
+                                      }}
+                                    >
+                                      Lifecycle Policy
+                                    </span>
+                                  </div>
+                                  <p style={{ fontSize: '12px', color: '#6B7280', margin: '3px 0 0 0' }}>
+                                    Configure session lifetime expirations, inactivity thresholds, and persistent browser storage flags.
+                                  </p>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                  {/* Session Timeout */}
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', padding: '12px', background: '#FAFAFA' }}>
+                                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937', display: 'block', marginBottom: '8px' }}>
+                                      Session Timeout
+                                    </label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center', marginBottom: activeMapping.sessionTimeout === 'every' ? '10px' : '0' }}>
+                                      {[
+                                        { val: 'every_time', label: 'Every time (default)' },
+                                        { val: 'every', label: 'Every' },
+                                        { val: 'never', label: 'Never' }
+                                      ].map((opt) => {
+                                        const current = activeMapping.sessionTimeout === '30 mins' ? 'every' : (activeMapping.sessionTimeout || 'every_time');
+                                        return (
+                                          <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 500, color: '#374151', cursor: 'pointer' }}>
+                                            <input
+                                              type="radio"
+                                              name="sessionTimeoutRadio"
+                                              value={opt.val}
+                                              checked={current === opt.val}
+                                              onChange={() => updateActiveMapping({ sessionTimeout: opt.val })}
+                                            />
+                                            {opt.label}
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {/* Numeric duration and Minutes/Hours/Days selector ONLY for 'Every' */}
+                                    {((activeMapping.sessionTimeout === '30 mins' ? 'every' : (activeMapping.sessionTimeout || 'every_time')) === 'every') && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', padding: '10px', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '6px' }}>
+                                        <span style={{ fontSize: '12px', color: '#4B5563', fontWeight: 500 }}>Expire session every:</span>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          max={365}
+                                          className="input"
+                                          style={{ width: '80px', fontSize: '12px', padding: '5px 8px' }}
+                                          value={activeMapping.sessionTimeoutDuration ?? 30}
+                                          onChange={(e) => updateActiveMapping({ sessionTimeoutDuration: parseInt(e.target.value) || 1 })}
+                                        />
+                                        <select
+                                          className="select"
+                                          style={{ fontSize: '12px', padding: '5px 8px', width: '110px' }}
+                                          value={activeMapping.sessionTimeoutUnit || 'Minutes'}
+                                          onChange={(e) => updateActiveMapping({ sessionTimeoutUnit: e.target.value })}
+                                        >
+                                          <option value="Minutes">Minutes</option>
+                                          <option value="Hours">Hours</option>
+                                          <option value="Days">Days</option>
+                                        </select>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Session Idle Timeout */}
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', padding: '12px', background: '#FAFAFA' }}>
+                                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937', display: 'block', marginBottom: '8px' }}>
+                                      Session Idle Timeout
+                                    </label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center', marginBottom: activeMapping.sessionIdleTimeout === 'set_limit' ? '10px' : '0' }}>
+                                      {[
+                                        { val: 'every_time', label: 'Every time (default)' },
+                                        { val: 'set_limit', label: 'Set Time Limit' }
+                                      ].map((opt) => {
+                                        const current = activeMapping.sessionIdleTimeout || 'every_time';
+                                        return (
+                                          <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 500, color: '#374151', cursor: 'pointer' }}>
+                                            <input
+                                              type="radio"
+                                              name="sessionIdleTimeoutRadio"
+                                              value={opt.val}
+                                              checked={current === opt.val}
+                                              onChange={() => updateActiveMapping({ sessionIdleTimeout: opt.val })}
+                                            />
+                                            {opt.label}
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {/* Duration and unit selector (Minutes/Hours) when 'Set Time Limit' is selected */}
+                                    {(activeMapping.sessionIdleTimeout === 'set_limit') && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', padding: '10px', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '6px' }}>
+                                        <span style={{ fontSize: '12px', color: '#4B5563', fontWeight: 500 }}>Lock after inactivity:</span>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          max={1440}
+                                          className="input"
+                                          style={{ width: '80px', fontSize: '12px', padding: '5px 8px' }}
+                                          value={activeMapping.sessionIdleTimeoutDuration ?? 15}
+                                          onChange={(e) => updateActiveMapping({ sessionIdleTimeoutDuration: parseInt(e.target.value) || 1 })}
+                                        />
+                                        <select
+                                          className="select"
+                                          style={{ fontSize: '12px', padding: '5px 8px', width: '110px' }}
+                                          value={activeMapping.sessionIdleTimeoutUnit || 'Minutes'}
+                                          onChange={(e) => updateActiveMapping({ sessionIdleTimeoutUnit: e.target.value })}
+                                        >
+                                          <option value="Minutes">Minutes</option>
+                                          <option value="Hours">Hours</option>
+                                        </select>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Persistent Browser */}
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', padding: '12px', background: '#FAFAFA' }}>
+                                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937', display: 'block', marginBottom: '8px' }}>
+                                      Persistent Browser
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '16px' }}>
+                                      {[
+                                        { val: 'always', label: 'Always Persistent (default)' },
+                                        { val: 'never', label: 'Never Persistent' }
+                                      ].map((opt) => {
+                                        const current = activeMapping.persistentBrowser || (activeMapping.persistentSession ? 'always' : 'always');
+                                        return (
+                                          <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 500, color: '#374151', cursor: 'pointer' }}>
+                                            <input
+                                              type="radio"
+                                              name="persistentBrowserRadio"
+                                              value={opt.val}
+                                              checked={current === opt.val}
+                                              onChange={() => updateActiveMapping({ persistentBrowser: opt.val, persistentSession: opt.val === 'always' })}
+                                            />
+                                            {opt.label}
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: '#6B7280', marginTop: '6px', display: 'block' }}>
+                                      Controls whether authentication cookies and tokens survive browser restarts on client workstations.
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -5079,6 +5902,572 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
         )}
 
       </div>
+
+      {/* ========================================================
+          ADD A NEW FENCE POPUP MODAL
+         ======================================================== */}
+      {isFenceModalOpen && (
+        <div className="modal-overlay open" style={{ zIndex: 120 }}>
+          <div className="modal-box" style={{ width: '740px', maxWidth: '94vw', maxHeight: '92vh', overflowY: 'auto' }}>
+            {/* Header */}
+            <div className="modal-header">
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#111827' }}>Add a New Fence</h2>
+                <p style={{ fontSize: '12px', color: '#6B7280', margin: '4px 0 0 0' }}>
+                  Define a circular perimeter or custom polygon boundary for geographic access control.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setIsFenceModalOpen(false)}
+                aria-label="Close modal"
+              >
+                <CloseIcon size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+              {/* Mandatory Fence Name */}
+              <div>
+                <label style={{ fontSize: '12.5px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                  Fence Name <span style={{ color: '#DC2626' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g., San Francisco HQ, London Tech Campus, Frankfurt Datacenter"
+                  value={fenceName}
+                  onChange={(e) => {
+                    setFenceName(e.target.value);
+                    if (e.target.value.trim()) setFenceNameError('');
+                  }}
+                  style={{
+                    borderColor: fenceNameError ? '#EF4444' : '#D1D5DB',
+                    fontSize: '12.5px',
+                    padding: '7px 10px'
+                  }}
+                />
+                {fenceNameError && (
+                  <span style={{ fontSize: '11px', color: '#DC2626', marginTop: '4px', display: 'block' }}>
+                    {fenceNameError}
+                  </span>
+                )}
+              </div>
+
+              {/* Location Search Bar */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                  Search Location or Address
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }}>
+                      <SearchIcon size={14} />
+                    </span>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Search city, address, or landmark (e.g. London, San Francisco, Tokyo, New York)..."
+                      value={fenceLocationSearch}
+                      onChange={(e) => setFenceLocationSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const query = fenceLocationSearch.trim().toLowerCase();
+                          if (!query) return;
+                          const presets: Record<string, { lat: number; lng: number }> = {
+                            'san francisco': { lat: 37.7749, lng: -122.4194 },
+                            'london': { lat: 51.5074, lng: -0.1278 },
+                            'new york': { lat: 40.7128, lng: -74.0060 },
+                            'frankfurt': { lat: 50.1109, lng: 8.6821 },
+                            'tokyo': { lat: 35.6762, lng: 139.6503 },
+                            'austin': { lat: 30.2672, lng: -97.7431 },
+                            'singapore': { lat: 1.3521, lng: 103.8198 },
+                            'sydney': { lat: -33.8688, lng: 151.2093 }
+                          };
+                          const matchKey = Object.keys(presets).find((k) => query.includes(k));
+                          const target = matchKey
+                            ? presets[matchKey]
+                            : { lat: 37.7749 + (query.length % 5) * 0.05, lng: -122.4194 - (query.length % 5) * 0.05 };
+                          setFenceCircleLat(target.lat.toFixed(4));
+                          setFenceCircleLng(target.lng.toFixed(4));
+                          setFencePolygonCenters([
+                            { lat: target.lat.toFixed(4), lng: target.lng.toFixed(4) },
+                            { lat: (target.lat + 0.005).toFixed(4), lng: (target.lng + 0.008).toFixed(4) },
+                            { lat: (target.lat - 0.004).toFixed(4), lng: (target.lng + 0.006).toFixed(4) }
+                          ]);
+                          showToast(`Map centered on "${fenceLocationSearch.trim()}"`);
+                        }
+                      }}
+                      style={{ paddingLeft: '32px', fontSize: '12px' }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => {
+                      const query = fenceLocationSearch.trim().toLowerCase();
+                      if (!query) return;
+                      const presets: Record<string, { lat: number; lng: number }> = {
+                        'san francisco': { lat: 37.7749, lng: -122.4194 },
+                        'london': { lat: 51.5074, lng: -0.1278 },
+                        'new york': { lat: 40.7128, lng: -74.0060 },
+                        'frankfurt': { lat: 50.1109, lng: 8.6821 },
+                        'tokyo': { lat: 35.6762, lng: 139.6503 },
+                        'austin': { lat: 30.2672, lng: -97.7431 },
+                        'singapore': { lat: 1.3521, lng: 103.8198 },
+                        'sydney': { lat: -33.8688, lng: 151.2093 }
+                      };
+                      const matchKey = Object.keys(presets).find((k) => query.includes(k));
+                      const target = matchKey
+                        ? presets[matchKey]
+                        : { lat: 37.7749 + (query.length % 5) * 0.05, lng: -122.4194 - (query.length % 5) * 0.05 };
+                      setFenceCircleLat(target.lat.toFixed(4));
+                      setFenceCircleLng(target.lng.toFixed(4));
+                      setFencePolygonCenters([
+                        { lat: target.lat.toFixed(4), lng: target.lng.toFixed(4) },
+                        { lat: (target.lat + 0.005).toFixed(4), lng: (target.lng + 0.008).toFixed(4) },
+                        { lat: (target.lat - 0.004).toFixed(4), lng: (target.lng + 0.006).toFixed(4) }
+                      ]);
+                      showToast(`Map centered on "${fenceLocationSearch.trim()}"`);
+                    }}
+                  >
+                    Search
+                  </button>
+                </div>
+              </div>
+
+              {/* Map Preview with Zoom Controls */}
+              <div
+                style={{
+                  position: 'relative',
+                  width: '100%',
+                  height: '240px',
+                  borderRadius: '8px',
+                  border: '1px solid #D1D5DB',
+                  overflow: 'hidden',
+                  background: '#E2E8F0'
+                }}
+              >
+                {/* SVG Mock Map */}
+                <svg width="100%" height="100%" viewBox="0 0 700 240" preserveAspectRatio="none" style={{ display: 'block' }}>
+                  <defs>
+                    <pattern id="fenceMapGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+                      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#CBD5E1" strokeWidth="0.8" />
+                    </pattern>
+                  </defs>
+                  {/* Land background */}
+                  <rect width="700" height="240" fill="#F1F5F9" />
+                  <rect width="700" height="240" fill="url(#fenceMapGrid)" />
+
+                  {/* Water feature */}
+                  <path d="M 0 160 Q 200 130 350 180 T 700 170 L 700 240 L 0 240 Z" fill="#BFDBFE" opacity="0.6" />
+
+                  {/* Roads network */}
+                  <path d="M 50 0 L 350 240" stroke="#FFFFFF" strokeWidth="8" />
+                  <path d="M 50 0 L 350 240" stroke="#94A3B8" strokeWidth="2" strokeDasharray="6,4" />
+                  <path d="M 0 80 Q 300 100 700 60" stroke="#FFFFFF" strokeWidth="10" />
+                  <path d="M 0 80 Q 300 100 700 60" stroke="#94A3B8" strokeWidth="2" />
+                  <path d="M 500 0 L 300 240" stroke="#FFFFFF" strokeWidth="6" />
+
+                  {/* Geometric Shapes according to fenceShape */}
+                  {fenceShape === 'Circle' ? (
+                    <g>
+                      {/* Pulse effect */}
+                      <circle
+                        cx="350"
+                        cy="115"
+                        r={Math.min(95, Math.max(30, (parseFloat(fenceCircleRadius) || 500) * (fenceCircleRadiusUnit === 'Kilometers' ? 8 : 0.08) * (fenceMapZoom / 14)))}
+                        fill="rgba(37, 99, 235, 0.18)"
+                        stroke="#2563EB"
+                        strokeWidth="2"
+                        strokeDasharray="5,4"
+                      />
+                      {/* Center Point */}
+                      <circle cx="350" cy="115" r="5" fill="#1D4ED8" />
+                      <circle cx="350" cy="115" r="9" fill="none" stroke="#1D4ED8" strokeWidth="1.5" opacity="0.6" />
+                      {/* Center Pin Marker */}
+                      <g transform="translate(340, 90)">
+                        <path d="M10 0 C4.5 0 0 4.5 0 10 C0 17.5 10 25 10 25 C10 25 20 17.5 20 10 C20 4.5 15.5 0 10 0 Z" fill="#DC2626" />
+                        <circle cx="10" cy="9" r="3.5" fill="#FFFFFF" />
+                      </g>
+                    </g>
+                  ) : (
+                    <g>
+                      {/* Polygon Surface */}
+                      {(() => {
+                        const basePoints = [
+                          { x: 350, y: 80 },
+                          { x: 420, y: 140 },
+                          { x: 310, y: 160 },
+                          { x: 270, y: 110 },
+                          { x: 390, y: 60 }
+                        ];
+                        const count = fencePolygonCenters.length;
+                        const pts = basePoints.slice(0, count).map((p) => `${p.x},${p.y}`).join(' ');
+                        return (
+                          <>
+                            <polygon points={pts} fill="rgba(37, 99, 235, 0.22)" stroke="#2563EB" strokeWidth="2.5" />
+                            {basePoints.slice(0, count).map((p, idx) => (
+                              <g key={idx} transform={`translate(${p.x}, ${p.y})`}>
+                                <circle cx="0" cy="0" r="10" fill="#1D4ED8" stroke="#FFFFFF" strokeWidth="2" />
+                                <text x="0" y="3.5" textAnchor="middle" fill="#FFFFFF" fontSize="10" fontWeight="bold">
+                                  {idx + 1}
+                                </text>
+                              </g>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </g>
+                  )}
+                </svg>
+
+                {/* Floating Zoom Controls (+ / -) */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '12px',
+                    right: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: '#FFFFFF',
+                    borderRadius: '6px',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                    overflow: 'hidden',
+                    border: '1px solid #D1D5DB'
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setFenceMapZoom((z) => Math.min(18, z + 1))}
+                    title="Zoom in"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: '1px solid #E5E7EB',
+                      padding: '6px 10px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      color: '#374151'
+                    }}
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFenceMapZoom((z) => Math.max(10, z - 1))}
+                    title="Zoom out"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: '6px 10px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      color: '#374151'
+                    }}
+                  >
+                    −
+                  </button>
+                </div>
+
+                {/* Map Info Overlay */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '8px',
+                    left: '8px',
+                    background: 'rgba(255, 255, 255, 0.92)',
+                    backdropFilter: 'blur(4px)',
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    color: '#374151',
+                    border: '1px solid #E2E8F0',
+                    display: 'flex',
+                    gap: '10px'
+                  }}
+                >
+                  <span>Zoom: <strong>{fenceMapZoom}x</strong></span>
+                  <span>Mode: <strong>{fenceShape}</strong></span>
+                  {fenceShape === 'Circle' ? (
+                    <span>Radius: <strong>{fenceCircleRadius} {fenceCircleRadiusUnit}</strong></span>
+                  ) : (
+                    <span>Centres: <strong>{fencePolygonCenters.length}</strong></span>
+                  )}
+                </div>
+              </div>
+
+              {/* Circle / Polygon Selection */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '6px' }}>
+                  Fence Shape
+                </label>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 16px',
+                      borderRadius: '6px',
+                      border: `1px solid ${fenceShape === 'Circle' ? '#2563EB' : '#D1D5DB'}`,
+                      background: fenceShape === 'Circle' ? '#EFF6FF' : '#FFFFFF',
+                      color: fenceShape === 'Circle' ? '#1D4ED8' : '#374151',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="fenceShapeOption"
+                      checked={fenceShape === 'Circle'}
+                      onChange={() => setFenceShape('Circle')}
+                    />
+                    ⭕ Circle
+                  </label>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 16px',
+                      borderRadius: '6px',
+                      border: `1px solid ${fenceShape === 'Polygon' ? '#2563EB' : '#D1D5DB'}`,
+                      background: fenceShape === 'Polygon' ? '#EFF6FF' : '#FFFFFF',
+                      color: fenceShape === 'Polygon' ? '#1D4ED8' : '#374151',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="fenceShapeOption"
+                      checked={fenceShape === 'Polygon'}
+                      onChange={() => setFenceShape('Polygon')}
+                    />
+                    🔷 Polygon
+                  </label>
+                </div>
+              </div>
+
+              {/* Coordinate Inputs */}
+              {fenceShape === 'Circle' ? (
+                /* Circle: Latitude, Longitude, Radius */
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                      Latitude
+                    </label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={fenceCircleLat}
+                      onChange={(e) => setFenceCircleLat(e.target.value)}
+                      style={{ fontSize: '12px', padding: '6px 8px', fontFamily: 'var(--mono)' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                      Longitude
+                    </label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={fenceCircleLng}
+                      onChange={(e) => setFenceCircleLng(e.target.value)}
+                      style={{ fontSize: '12px', padding: '6px 8px', fontFamily: 'var(--mono)' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '4px' }}>
+                      Radius
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="number"
+                        min={1}
+                        className="input"
+                        value={fenceCircleRadius}
+                        onChange={(e) => setFenceCircleRadius(e.target.value)}
+                        style={{ flex: 1, fontSize: '12px', padding: '6px 8px' }}
+                      />
+                      <select
+                        className="select"
+                        value={fenceCircleRadiusUnit}
+                        onChange={(e) => setFenceCircleRadiusUnit(e.target.value as any)}
+                        style={{ width: '110px', fontSize: '12px', padding: '6px 8px' }}
+                      >
+                        <option value="Meters">Meters</option>
+                        <option value="Kilometers">Kilometers</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Polygon: Minimum three centres, Add Centre */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                      Polygon Centres (Minimum 3 required)
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => {
+                        const last = fencePolygonCenters[fencePolygonCenters.length - 1];
+                        const nextLat = (parseFloat(last.lat) + 0.003).toFixed(4);
+                        const nextLng = (parseFloat(last.lng) + 0.003).toFixed(4);
+                        setFencePolygonCenters([...fencePolygonCenters, { lat: nextLat, lng: nextLng }]);
+                      }}
+                      style={{ fontSize: '11px', padding: '3px 8px' }}
+                    >
+                      + Add Centre
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {fencePolygonCenters.map((centre, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '80px 1fr 1fr 40px',
+                          gap: '8px',
+                          alignItems: 'center',
+                          padding: '6px 10px',
+                          background: '#F9FAFB',
+                          border: '1px solid #E5E7EB',
+                          borderRadius: '6px'
+                        }}
+                      >
+                        <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#4B5563' }}>
+                          Centre {idx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          className="input"
+                          placeholder="Latitude"
+                          value={centre.lat}
+                          onChange={(e) => {
+                            const updated = [...fencePolygonCenters];
+                            updated[idx] = { ...updated[idx], lat: e.target.value };
+                            setFencePolygonCenters(updated);
+                          }}
+                          style={{ fontSize: '12px', padding: '4px 8px', fontFamily: 'var(--mono)' }}
+                        />
+                        <input
+                          type="text"
+                          className="input"
+                          placeholder="Longitude"
+                          value={centre.lng}
+                          onChange={(e) => {
+                            const updated = [...fencePolygonCenters];
+                            updated[idx] = { ...updated[idx], lng: e.target.value };
+                            setFencePolygonCenters(updated);
+                          }}
+                          style={{ fontSize: '12px', padding: '4px 8px', fontFamily: 'var(--mono)' }}
+                        />
+                        {fencePolygonCenters.length > 3 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFencePolygonCenters(fencePolygonCenters.filter((_, i) => i !== idx));
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', padding: '4px' }}
+                            title="Remove centre"
+                          >
+                            <TrashIcon size={14} />
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: '#9CA3AF', textAlign: 'center' }}>min</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer: Cancel and Add Area */}
+            <div className="modal-footer" style={{ marginTop: '20px' }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setIsFenceModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  if (!fenceName.trim()) {
+                    setFenceNameError('Fence Name is mandatory.');
+                    return;
+                  }
+                  setFenceNameError('');
+
+                  const newFenceObj = {
+                    id: `fence-${Date.now()}`,
+                    name: fenceName.trim(),
+                    type: fenceShape,
+                    ...(fenceShape === 'Circle'
+                      ? {
+                          lat: parseFloat(fenceCircleLat) || 37.7749,
+                          lng: parseFloat(fenceCircleLng) || -122.4194,
+                          radius: parseFloat(fenceCircleRadius) || 500,
+                          radiusUnit: fenceCircleRadiusUnit
+                        }
+                      : {
+                          centers: fencePolygonCenters.map((c) => ({
+                            lat: parseFloat(c.lat) || 37.7749,
+                            lng: parseFloat(c.lng) || -122.4194
+                          }))
+                        })
+                  };
+
+                  // Add to registry of available fences
+                  setAvailableFences((prev) => [...prev, newFenceObj]);
+                  setCaFenceSelect(newFenceObj.name);
+
+                  // Directly add to active Geo tab (Included or Excluded)
+                  const newGeoEntry = {
+                    id: `geo-fence-${Date.now()}`,
+                    name: newFenceObj.name,
+                    type: 'Fence' as const,
+                    mode: caGeoTab === 'included' ? 'Included' as const : 'Excluded' as const
+                  };
+
+                  if (caGeoTab === 'included') {
+                    const currentList = activeMapping.geoIncluded || [
+                      { id: 'geo-1', name: 'United States', type: 'Country', mode: 'Included' },
+                      { id: 'geo-2', name: 'San Francisco HQ', type: 'Fence', mode: 'Included' }
+                    ];
+                    updateActiveMapping({ geoIncluded: [...currentList, newGeoEntry] });
+                  } else {
+                    const currentList = activeMapping.geoExcluded || [];
+                    updateActiveMapping({ geoExcluded: [...currentList, newGeoEntry] });
+                  }
+
+                  showToast(`Created fence "${newFenceObj.name}" and added to ${caGeoTab} list`);
+                  setIsFenceModalOpen(false);
+                  setFenceName('');
+                  setFenceLocationSearch('');
+                }}
+              >
+                Add Area
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
